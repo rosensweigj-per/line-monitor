@@ -17,4 +17,8 @@ Tuning: `MIN_EV` (0.03), `MIN_REMAINING` (3000), `SPORTS`, `NEAR_INTERVAL_MIN` (
 Spreads/totals also match when a book has a better number than Pinnacle (e.g. +3.5 vs Pin +3);
 the EV shown is then a floor ("EV ≥"), since Pin's probability at its own number understates it.
 
+Player props: one Odds API call per game (cost = prop markets returned), hourly, for games starting
+within 6h. `PROP_SPORTS` (basketball_nba; `off` disables), `PROP_MARKETS` (player_points),
+`PROP_MIN_EV` (0.04), `PROP_INTERVAL_MIN` (60), `PROP_WINDOW_HOURS` (6). `SPORTS=off` also works.
+
 Tests: `npm test`

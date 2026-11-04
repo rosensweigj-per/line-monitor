@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dec, toAmerican, findEdges, lineOk, formatHit } from "../lib/scan.mjs";
+import { dec, toAmerican, findEdges, findPropEdges, lineOk, formatHit } from "../lib/scan.mjs";
 import { runMonitor } from "../lib/run.mjs";
 import { renderEdges } from "../lib/page.mjs";
 
@@ -119,19 +119,22 @@ test("better total number works for Over and Under", () => {
 
 // --- runMonitor ---
 
-function harness(envs, games) {
+function harness(envs, games, propEvent = null) {
   const mem = {};
   const pushes = [];
+  const calls = [];
   const store = { get: async (k) => mem[k] ?? null, setJSON: async (k, v) => { mem[k] = structuredClone(v); } };
   globalThis.fetch = async (url, opts) => {
     url = String(url);
-    if (url.includes("/events")) return new Response(JSON.stringify([{ commence_time: START }]));
+    calls.push(url);
+    if (/\/events\/[^/]+\/odds/.test(url)) return new Response(JSON.stringify(propEvent || {}), { headers: { "x-requests-remaining": "8999" } });
+    if (url.includes("/events")) return new Response(JSON.stringify([{ id: "g1", commence_time: START }]));
     if (url.includes("/odds")) return new Response(JSON.stringify(games), { headers: { "x-requests-remaining": "9000" } });
     pushes.push({ url, body: Object.fromEntries(new URLSearchParams(opts.body)) });
     return new Response("{}");
   };
-  const env = (k) => ({ ODDS_API_KEY: "x", PUSHOVER_TOKEN: "t", PUSHOVER_USER: "u", SPORTS: "basketball_nba", ...envs })[k];
-  return { mem, pushes, run: (now = NOW, force = false) => runMonitor({ store, env, now, force, log() {} }) };
+  const env = (k) => ({ ODDS_API_KEY: "x", PUSHOVER_TOKEN: "t", PUSHOVER_USER: "u", SPORTS: "basketball_nba", PROP_SPORTS: "off", ...envs })[k];
+  return { mem, pushes, calls, run: (now = NOW, force = false) => runMonitor({ store, env, now, force, log() {} }) };
 }
 const edgeGame = () => game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(110, -130)] } });
 
@@ -195,4 +198,55 @@ test("edges page lists future edges, best first, and escapes text", () => {
   assert.doesNotMatch(html, /<script>x/);
   assert.match(html, /8123 Odds API credits/);
   assert.match(renderEdges({ edges: null, now: NOW }), /No open edges/);
+});
+
+// --- props ---
+
+const prop = (player, pt, over, under) => [
+  { name: "Over", description: player, point: pt, price: over },
+  { name: "Under", description: player, point: pt, price: under },
+];
+const propEvent = () => ({
+  id: "g1",
+  commence_time: START,
+  home_team: "Celtics",
+  away_team: "Knicks",
+  bookmakers: [
+    { key: "pinnacle", last_update: fresh, markets: [{ key: "player_points", outcomes: [...prop("Jayson Tatum", 27.5, -110, -110), ...prop("Jalen Brunson", 26.5, -110, -110)] }] },
+    // FD: Tatum Over 27.5 +110 (EV 5%); Brunson Under 27.5 -105 at a better number than Pin's 26.5 (EV >= 2.4%, below 4%)
+    { key: "fanduel", markets: [{ key: "player_points", outcomes: [...prop("Jayson Tatum", 27.5, 110, -140), ...prop("Jalen Brunson", 27.5, -125, -105)] }] },
+    // DK: Brunson Under 27.5 +112 -> EV >= 6%; Tatum Over 28.5 +150 is a worse number, must be ignored
+    { key: "draftkings", markets: [{ key: "player_points", outcomes: [...prop("Jayson Tatum", 28.5, 150, -190), ...prop("Jalen Brunson", 27.5, -150, 112)] }] },
+  ],
+});
+
+test("prop edges: devig per player, better numbers count, worse numbers ignored", () => {
+  const hits = findPropEdges(propEvent(), "basketball_nba", { now: NOW });
+  assert.deepEqual(hits.map((h) => `${h.pick} ${h.book}`), ["Jalen Brunson Under 27.5 pts DK", "Jayson Tatum Over 27.5 pts FD"]);
+  assert.equal(hits[0].betterLine, true);
+  assert.match(formatHit(hits[0]), /at Pin's 26\.5 .*EV ≥ \+6\.0%/);
+  assert.equal(findPropEdges({ ...propEvent(), commence_time: new Date(NOW - 1).toISOString() }, "basketball_nba", { now: NOW }).length, 0);
+});
+
+test("props: pulled for games within the window, hourly, and alerted with main lines", async () => {
+  const h = harness({ PROP_SPORTS: "basketball_nba" }, [], propEvent());
+  const s = await h.run();
+  assert.equal(h.calls.filter((u) => u.includes("/events/g1/odds")).length, 1);
+  assert.match(h.calls.find((u) => u.includes("/events/g1/odds")), /markets=player_points/);
+  assert.match(s.props.basketball_nba, /1 games, 2 edges/);
+  assert.match(h.pushes[0].body.message, /Jayson Tatum Over 27\.5 pts \+110 @ FD/);
+  assert.equal(h.mem.edges["props:g1"].hits.length, 2);
+  assert.equal(s.remaining, 8999);
+
+  await h.run(NOW + 15 * 60e3);
+  assert.equal(h.calls.filter((u) => u.includes("/events/g1/odds")).length, 1, "not due again for an hour");
+  await h.run(NOW + 60 * 60e3);
+  assert.equal(h.calls.filter((u) => u.includes("/events/g1/odds")).length, 2);
+});
+
+test("props: games beyond the window are not pulled", async () => {
+  const h = harness({ PROP_SPORTS: "basketball_nba", PROP_WINDOW_HOURS: "1" }, [], propEvent());
+  const s = await h.run();
+  assert.equal(h.calls.filter((u) => u.includes("/events/g1/odds")).length, 0);
+  assert.match(s.props.basketball_nba, /no games due/);
 });
