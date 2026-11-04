@@ -7,7 +7,7 @@ import { runMonitor } from "../../lib/run.mjs";
 export default async () => {
   const summary = await runMonitor({
     store: getStore({ name: "line-monitor", consistency: "strong" }),
-    env: (k: string) => Netlify.env.get(k),
+    env: (k: string) => Netlify.env.get(k)?.trim(),
   });
   console.log(JSON.stringify(summary));
 };

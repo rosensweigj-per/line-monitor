@@ -12,11 +12,15 @@ export default async (req: Request) => {
     return new Response("Not found", { status: 404 });
   }
   const store = getStore({ name: "line-monitor", consistency: "strong" });
-  const env = (k: string) => Netlify.env.get(k);
+  const env = (k: string) => Netlify.env.get(k)?.trim();
 
   if (url.searchParams.get("test")) {
-    const sent = await push(env, "Line alerts connected", "Test push from your Netlify line monitor. Real alerts look like:\n\nNBA · Cavaliers ML +130 @ FD\n  fair +127 (Pin +122) · EV +3.1% · ~$10");
-    return Response.json({ ok: true, sent });
+    try {
+      const sent = await push(env, "Line alerts connected", "Test push from your Netlify line monitor. Real alerts look like:\n\nNBA · Cavaliers ML +130 @ FD\n  fair +127 (Pin +122) · EV +3.1% · ~$10");
+      return Response.json({ ok: true, sent });
+    } catch (e) {
+      return Response.json({ ok: false, error: (e as Error).message }, { status: 500 });
+    }
   }
   if (url.searchParams.get("run")) {
     return Response.json(await runMonitor({ store, env, force: true }));
