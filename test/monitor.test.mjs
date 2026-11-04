@@ -400,3 +400,19 @@ test("NFL props run: requests only NFL markets and formats the pick", async () =
   assert.match(s.props.americanfootball_nfl, /1 games, 1 edges/);
   assert.match(h.pushes[0].body.message, /NFL · Travis Kelce Over 54\.5 rec yds \+110 @ FD/);
 });
+
+test("edges page: each card has an Open <book> link (deep link, else book site, never non-https)", () => {
+  const base = findEdges([edgeGame()], "basketball_nba", { now: NOW })[0];
+  const html = renderEdges({
+    edges: { nba: { at: NOW, hits: [
+      { ...base, link: "https://sportsbook.fanduel.com/addToBetslip?a=1&b=2" },
+      { ...base, sel: "x", pick: "Old ML", book: "DK", bookKey: "draftkings", link: undefined },
+      { ...base, sel: "y", pick: "Bad ML", book: "Weird", bookKey: "nope", link: "javascript:alert(1)" },
+    ] } },
+    now: NOW,
+  });
+  assert.match(html, /<a class="open" href="https:\/\/sportsbook\.fanduel\.com\/addToBetslip\?a=1&#38;b=2"[^>]*>Open FD<\/a>/);
+  assert.match(html, /href="https:\/\/sportsbook\.draftkings\.com"[^>]*>Open DK/);
+  assert.doesNotMatch(html, /javascript:/);
+  assert.doesNotMatch(html, /Open Weird/);
+});
