@@ -1,8 +1,10 @@
 import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
 import { renderEdges } from "../../lib/page.mjs";
+import { runMonitor } from "../../lib/run.mjs";
 
-// GET /edges?token=RUN_TOKEN -> phone-friendly page of the edges from each sport's latest pull.
+// GET  /edges?token=RUN_TOKEN -> phone-friendly page of the edges from each sport's latest pull.
+// POST /edges?token=RUN_TOKEN -> "Scan now" button: full scan (ignores cadence and quiet hours), then back to the page.
 export default async (req: Request) => {
   const url = new URL(req.url);
   const token = Netlify.env.get("RUN_TOKEN");
@@ -10,12 +12,17 @@ export default async (req: Request) => {
     return new Response("Not found", { status: 404 });
   }
   const store = getStore({ name: "line-monitor", consistency: "strong" });
+  if (req.method === "POST") {
+    await runMonitor({ store, env: (k: string) => Netlify.env.get(k)?.trim(), force: true });
+    const back = new URL(`/edges?token=${encodeURIComponent(token)}&scanned=1`, url);
+    return Response.redirect(back.toString(), 303);
+  }
   const [edges, state, lastRun] = await Promise.all([
     store.get("edges", { type: "json" }),
     store.get("state", { type: "json" }),
     store.get("lastRun", { type: "json" }),
   ]);
-  return new Response(renderEdges({ edges, state, lastRun, now: Date.now() }), {
+  return new Response(renderEdges({ edges, state, lastRun, now: Date.now(), token, scanned: url.searchParams.has("scanned") }), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 };

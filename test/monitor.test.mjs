@@ -293,3 +293,19 @@ test("checks every 5 min within 1h of a game, every 15 within 4h", async () => {
   await h2.run(t); await h2.run(t + 5 * 60e3); await h2.run(t + 10 * 60e3);
   assert.equal(pulls(h2), 3);
 });
+
+test("edges page has a Scan now button and shows scan results and errors", () => {
+  const html = renderEdges({
+    edges: {},
+    lastRun: { at: new Date(NOW).toISOString(), newHits: [{}, {}], sports: { icehockey_nhl: "error: HTTP 500 boom", basketball_nba: "pulled 3 games, 0 edges" } },
+    now: NOW,
+    token: "a b&c",
+    scanned: true,
+  });
+  assert.match(html, /<form method="post" action="\/edges\?token=a%20b%26c"/);
+  assert.match(html, /Scan now/);
+  assert.match(html, /Scan done · 2 new alerts sent/);
+  assert.match(html, /icehockey_nhl: error: HTTP 500 boom/);
+  assert.doesNotMatch(html, /basketball_nba: pulled/);
+  assert.doesNotMatch(renderEdges({ edges: {}, now: NOW, token: "t" }), /Scan done/);
+});

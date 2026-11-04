@@ -6,7 +6,7 @@ every 5–60 minutes and sends +EV alerts to Pushover (ntfy optional). No Claude
 - `netlify/functions/line-monitor.mts`: scheduled run (`*/5 * * * *` UTC; only runs 9 AM–10 PM ET;
   each sport every 5 min within 1h of a game, 15 min within 4h, else hourly)
 - `netlify/functions/status.mts`: `/status?token=RUN_TOKEN` last run · `&run=1` scan now · `&test=1` test push
-- `netlify/functions/edges.mts`: `/edges?token=RUN_TOKEN` phone page of open edges
+- `netlify/functions/edges.mts`: `/edges?token=RUN_TOKEN` phone page of open edges, with a Scan now button
 - `lib/scan.mjs`: devig + EV math · `lib/run.mjs`: cadence, credit guard, dedupe, push
 
 Env vars (Netlify site settings): `ODDS_API_KEY`, `RUN_TOKEN`, `PUSHOVER_TOKEN` (app API token),
