@@ -24,7 +24,8 @@ Spreads/totals also match when a book has a better number than Pinnacle (e.g. +3
 the EV shown is then a floor ("EV ≥"), since Pin's probability at its own number understates it.
 
 Player props: one Odds API call per game (cost = prop markets returned), hourly, for games starting
-within 6h. `PROP_SPORTS` (basketball_nba; `off` disables), `PROP_MARKETS` (player_points),
+within 6h. `PROP_SPORTS` (basketball_nba; add americanfootball_nfl; `off` disables), `PROP_MARKETS` (player_points; one
+comma list for all sports, each sport only requests its own markets, see `PROP_CATALOG` in lib/scan.mjs),
 `PROP_MIN_EV` (0.04), `PROP_INTERVAL_MIN` (60), `PROP_WINDOW_HOURS` (6). `SPORTS=off` also works.
 
 Tests: `npm test`

@@ -319,7 +319,7 @@ test("settings form round-trips and overrides env vars in a run", async () => {
   for (const k of ["draftkings", "fanduel", "espnbet", "betrivers", "williamhill_us", "hardrockbet"]) form.set(`book_${k}`, "on");
   form.set("sport_basketball_nba", "on");
   form.set("sport_icehockey_nhl", "on");
-  form.set("props", "on");
+  form.set("props_basketball_nba", "on");
   form.set("prop_player_points", "on");
   form.set("prop_player_rebounds", "on");
   form.set("min_ev", "2.5");
@@ -364,4 +364,39 @@ test("settings form guards bad input", () => {
   assert.equal(s.SPORTS, "off");
   assert.equal(s.PROP_SPORTS, "off");
   assert.equal(s.BOOKS_OFF, "draftkings,fanduel,espnbet,betrivers,williamhill_us,fanatics,hardrockbet");
+});
+
+test("NFL props: own markets per sport, defaults when none picked", async () => {
+  const { propMarketsFor } = await import("../lib/scan.mjs");
+  const chosen = ["player_points", "player_pass_yds", "player_receptions"];
+  assert.deepEqual(propMarketsFor("basketball_nba", chosen), ["player_points"]);
+  assert.deepEqual(propMarketsFor("americanfootball_nfl", chosen), ["player_pass_yds", "player_receptions"]);
+  assert.deepEqual(propMarketsFor("americanfootball_nfl", ["player_points"]), ["player_pass_yds", "player_rush_yds", "player_receptions", "player_reception_yds"]);
+
+  const form = new URLSearchParams({ props_americanfootball_nfl: "on", props_basketball_nba: "on", prop_player_rebounds: "on" });
+  const saved = parseSettingsForm(form);
+  assert.equal(saved.PROP_SPORTS, "basketball_nba,americanfootball_nfl");
+  assert.equal(saved.PROP_MARKETS, "player_rebounds,player_pass_yds,player_rush_yds,player_receptions,player_reception_yds");
+  const html = renderSettings({ cur: currentSettings(withSettings(() => undefined, saved)), token: "t" });
+  assert.match(html, /NFL player props/);
+  assert.match(html, /name="props_americanfootball_nfl" checked/);
+  assert.match(html, /name="prop_player_receptions" checked> Receptions/);
+  assert.match(html, /name="prop_player_points"> Points/);
+});
+
+test("NFL props run: requests only NFL markets and formats the pick", async () => {
+  const ev = {
+    id: "g1", commence_time: START, home_team: "Chiefs", away_team: "Bills",
+    bookmakers: [
+      { key: "pinnacle", last_update: fresh, markets: [{ key: "player_reception_yds", outcomes: prop("Travis Kelce", 54.5, -110, -110) }] },
+      { key: "fanduel", markets: [{ key: "player_reception_yds", outcomes: prop("Travis Kelce", 54.5, 110, -140) }] },
+    ],
+  };
+  const h = harness({ PROP_SPORTS: "americanfootball_nfl", PROP_MARKETS: "player_points,player_reception_yds", SPORTS: "americanfootball_nfl" }, [], ev);
+  const s = await h.run();
+  const url = h.calls.find((u) => u.includes("/events/g1/odds"));
+  assert.match(url, /\/americanfootball_nfl\/events\/g1\/odds/);
+  assert.match(url, /markets=player_reception_yds&/);
+  assert.match(s.props.americanfootball_nfl, /1 games, 1 edges/);
+  assert.match(h.pushes[0].body.message, /NFL · Travis Kelce Over 54\.5 rec yds \+110 @ FD/);
 });
