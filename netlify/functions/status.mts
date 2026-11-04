@@ -16,7 +16,7 @@ export default async (req: Request) => {
 
   if (url.searchParams.get("test")) {
     try {
-      const sent = await push(env, "Line alerts connected", "Test push from your Netlify line monitor. Real alerts look like:\n\nNBA · Cavaliers ML +130 @ FD\n  fair +127 (Pin +122) · EV +3.1% · ~$10");
+      const sent = await push(env, "Line alerts connected", "Test push from your Netlify line monitor. Real alerts look like:\n\nNBA · Cavaliers ML +130 @ FD\n  fair +127 (Pin +122) · EV +3.1% · ~$10", false, { url: "https://sportsbook.fanduel.com", title: "Open FD" });
       return Response.json({ ok: true, sent });
     } catch (e) {
       return Response.json({ ok: false, error: (e as Error).message }, { status: 500 });

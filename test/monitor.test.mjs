@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dec, toAmerican, findEdges, findPropEdges, lineOk, formatHit } from "../lib/scan.mjs";
+import { dec, toAmerican, findEdges, findPropEdges, lineOk, formatHit, resolveBooks } from "../lib/scan.mjs";
 import { runMonitor } from "../lib/run.mjs";
 import { renderEdges } from "../lib/page.mjs";
 
@@ -249,4 +249,47 @@ test("props: games beyond the window are not pulled", async () => {
   const s = await h.run();
   assert.equal(h.calls.filter((u) => u.includes("/events/g1/odds")).length, 0);
   assert.match(s.props.basketball_nba, /no games due/);
+});
+
+// --- books on/off, links, cadence ---
+
+test("resolveBooks matches keys and labels in any case", () => {
+  assert.deepEqual([...resolveBooks("fanatics, Hard Rock, dk, nope")].sort(), ["draftkings", "fanatics", "hardrockbet"]);
+  assert.deepEqual([...resolveBooks("thescore,caesars")].sort(), ["espnbet", "williamhill_us"]);
+  assert.equal(resolveBooks("").size, 0);
+});
+
+test("BOOKS_OFF drops a book and the next-best book wins", async () => {
+  const g = game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(106, -130)], draftkings: [h2h(112, -135)] } });
+  const s = await harness({ BOOKS_OFF: "DK" }, [g]).run();
+  assert.deepEqual(s.newHits.map((h) => h.book), ["FD"]);
+  assert.deepEqual(s.booksOff, ["draftkings"]);
+  assert.equal((await harness({ BOOKS_OFF: "dk,fd" }, [g]).run()).newHits.length, 0);
+});
+
+test("alert links to the best book: API deep link with {state}, else book homepage", async () => {
+  const g = game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(110, -130)] } });
+  g.bookmakers[1].markets[0].outcomes[0].link = "https://{state}.sportsbook.fanduel.com/addToBetslip?x=1";
+  const h = harness({}, [g]);
+  await h.run();
+  assert.equal(h.pushes[0].body.url, "https://va.sportsbook.fanduel.com/addToBetslip?x=1");
+  assert.equal(h.pushes[0].body.url_title, "Open FD");
+  assert.ok(h.calls.some((u) => u.includes("/odds") && u.includes("includeLinks=true")));
+
+  const h2 = harness({}, [game({ pin: [h2h(-110, -110)], books: { draftkings: [h2h(110, -130)] } })]);
+  await h2.run();
+  assert.equal(h2.pushes[0].body.url, "https://sportsbook.draftkings.com");
+});
+
+test("checks every 5 min within 1h of a game, every 15 within 4h", async () => {
+  const pulls = (h) => h.calls.filter((u) => /\/odds\?/.test(u)).length;
+  // START is 2h out: 15-minute cadence
+  const h = harness({}, [edgeGame()]);
+  await h.run(); await h.run(NOW + 5 * 60e3); await h.run(NOW + 15 * 60e3);
+  assert.equal(pulls(h), 2);
+  // 50 minutes before START: 5-minute cadence
+  const t = NOW + 70 * 60e3;
+  const h2 = harness({}, [edgeGame()]);
+  await h2.run(t); await h2.run(t + 5 * 60e3); await h2.run(t + 10 * 60e3);
+  assert.equal(pulls(h2), 3);
 });
