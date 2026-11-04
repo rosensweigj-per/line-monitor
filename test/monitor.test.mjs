@@ -309,3 +309,59 @@ test("edges page has a Scan now button and shows scan results and errors", () =>
   assert.doesNotMatch(html, /basketball_nba: pulled/);
   assert.doesNotMatch(renderEdges({ edges: {}, now: NOW, token: "t" }), /Scan done/);
 });
+
+// --- settings page ---
+import { currentSettings, parseSettingsForm, withSettings } from "../lib/settings.mjs";
+import { renderSettings } from "../lib/page.mjs";
+
+test("settings form round-trips and overrides env vars in a run", async () => {
+  const form = new URLSearchParams();
+  for (const k of ["draftkings", "fanduel", "espnbet", "betrivers", "williamhill_us", "hardrockbet"]) form.set(`book_${k}`, "on");
+  form.set("sport_basketball_nba", "on");
+  form.set("sport_icehockey_nhl", "on");
+  form.set("props", "on");
+  form.set("prop_player_points", "on");
+  form.set("prop_player_rebounds", "on");
+  form.set("min_ev", "2.5");
+  form.set("prop_min_ev", "5");
+  form.set("start", "10");
+  form.set("end", "23");
+  const saved = parseSettingsForm(form);
+  assert.deepEqual(saved, {
+    BOOKS_OFF: "fanatics",
+    SPORTS: "basketball_nba,icehockey_nhl",
+    PROP_SPORTS: "basketball_nba",
+    PROP_MARKETS: "player_points,player_rebounds",
+    MIN_EV: "0.025",
+    PROP_MIN_EV: "0.05",
+    ACTIVE_START_HOUR_ET: "10",
+    ACTIVE_END_HOUR_ET: "23",
+  });
+
+  const cur = currentSettings(withSettings((k) => ({ MIN_EV: "0.03", BOOKS_OFF: "dk" })[k], saved));
+  assert.equal(cur.minEv, 0.025);
+  assert.deepEqual([...cur.booksOff], ["fanatics"]);
+  const html = renderSettings({ cur, token: "t", custom: true });
+  assert.match(html, /name="book_fanatics">/);
+  assert.match(html, /name="book_draftkings" checked/);
+  assert.match(html, /name="min_ev"[^>]*value="2.5"/);
+  assert.match(html, /<option value="23" selected>11 PM/);
+  assert.match(html, /Reset to Netlify values/);
+
+  // saved settings beat env vars inside runMonitor
+  const g = game({ pin: [h2h(-110, -110)], books: { fanatics: [h2h(115, -135)], fanduel: [h2h(110, -130)] } });
+  const h = harness({}, [g]);
+  h.mem.settings = { BOOKS_OFF: "fanatics" };
+  const s = await h.run();
+  assert.deepEqual(s.newHits.map((x) => x.book), ["FD"]);
+});
+
+test("settings form guards bad input", () => {
+  const s = parseSettingsForm(new URLSearchParams({ min_ev: "abc", prop_min_ev: "-4", start: "20", end: "8" }));
+  assert.equal(s.MIN_EV, "0.03");
+  assert.equal(s.PROP_MIN_EV, "0");
+  assert.equal(s.ACTIVE_END_HOUR_ET, "21");
+  assert.equal(s.SPORTS, "off");
+  assert.equal(s.PROP_SPORTS, "off");
+  assert.equal(s.BOOKS_OFF, "draftkings,fanduel,espnbet,betrivers,williamhill_us,fanatics,hardrockbet");
+});
