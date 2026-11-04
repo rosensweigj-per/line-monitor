@@ -336,6 +336,7 @@ test("settings form round-trips and overrides env vars in a run", async () => {
     PROP_MIN_EV: "0.05",
     ACTIVE_START_HOUR_ET: "10",
     ACTIVE_END_HOUR_ET: "23",
+    ALERT_TTL_MIN: "10",
   });
 
   const cur = currentSettings(withSettings((k) => ({ MIN_EV: "0.03", BOOKS_OFF: "dk" })[k], saved));
@@ -415,4 +416,72 @@ test("edges page: each card has an Open <book> link (deep link, else book site, 
   assert.match(html, /href="https:\/\/sportsbook\.draftkings\.com"[^>]*>Open DK/);
   assert.doesNotMatch(html, /javascript:/);
   assert.doesNotMatch(html, /Open Weird/);
+});
+
+// --- alert expiry + re-check ---
+import { recheck, checkUrl } from "../lib/scan.mjs";
+import { renderCheck } from "../lib/page.mjs";
+
+test("alerts expire, show when found, and link to the check page", async () => {
+  const h = harness({ URL: "https://jason-line-alerts.netlify.app", RUN_TOKEN: "tok" }, [edgeGame()]);
+  await h.run();
+  const b = h.pushes[0].body;
+  assert.equal(b.ttl, "600");
+  assert.equal(b.timestamp, String(Math.floor(NOW / 1000)));
+  assert.match(b.message, /Found 3:00 PM ET · expires in 10 min/);
+  const u = new URL(b.url);
+  assert.equal(u.origin + u.pathname, "https://jason-line-alerts.netlify.app/check");
+  assert.equal(u.searchParams.get("token"), "tok");
+  assert.equal(u.searchParams.get("s"), "basketball_nba");
+  assert.equal(u.searchParams.get("e"), "g1");
+  assert.equal(u.searchParams.get("m"), "h2h");
+  assert.equal(u.searchParams.get("n"), "Celtics");
+  assert.equal(u.searchParams.get("b"), "fanduel");
+  assert.equal(u.searchParams.get("o"), "110");
+  assert.match(b.url_title, /Check price, then open FD/);
+
+  const h2 = harness({ ALERT_TTL_MIN: "0" }, [edgeGame()]); // no URL -> falls back to book link, no ttl
+  await h2.run();
+  assert.equal(h2.pushes[0].body.ttl, undefined);
+  assert.equal(h2.pushes[0].body.url, "https://sportsbook.fanduel.com");
+});
+
+test("recheck: still +EV, Pinnacle moved against, book line gone, started", () => {
+  const ev = edgeGame();
+  const q = { market: "h2h", side: "Celtics", bookKey: "fanduel" };
+  let r = recheck(ev, "basketball_nba", q, NOW);
+  assert.equal(r.status, "ok");
+  assert.ok(Math.abs(r.hit.ev - 0.05) < 1e-9);
+  // Pinnacle moves to Celtics +105 / Knicks -125: Celtics fair drops, same FD +110 is now -EV-ish
+  ev.bookmakers[0].markets = [h2h(115, -135)];
+  r = recheck(ev, "basketball_nba", q, NOW);
+  assert.ok(r.hit.ev < 0.01);
+  // other books ignored even if better
+  ev.bookmakers.push({ key: "draftkings", markets: [h2h(150, -170)] });
+  assert.equal(recheck(ev, "basketball_nba", q, NOW).hit.book, "FD");
+  assert.equal(recheck(ev, "basketball_nba", { ...q, bookKey: "betrivers" }, NOW).status, "nobook");
+  assert.equal(recheck({ ...ev, commence_time: new Date(NOW - 1).toISOString() }, "basketball_nba", q, NOW).status, "started");
+  // props
+  const pr = recheck(propEvent(), "basketball_nba", { market: "player_points", side: "Under", player: "Jalen Brunson", bookKey: "draftkings" }, NOW);
+  assert.equal(pr.hit.pick, "Jalen Brunson Under 27.5 pts");
+});
+
+test("check page: verdicts and what changed", () => {
+  const base = findEdges([edgeGame()], "basketball_nba", { now: NOW })[0];
+  const then = { odds: 110, fair: -100, pinPrice: -110, ev: 0.05, at: NOW - 10 * 60e3, bookKey: "fanduel", point: null };
+  let html = renderCheck({ then, result: { status: "ok", hit: base }, token: "t", now: NOW, book: "FD" });
+  assert.match(html, /Still \+EV · \+5\.0%/);
+  assert.match(html, /Nothing meaningful moved/);
+  assert.match(html, /Alert \(10m ago\)/);
+  const moved = { ...base, fair: 120, pinPrice: 115, ev: -0.045 };
+  html = renderCheck({ then, result: { status: "ok", hit: moved }, token: "t", now: NOW, book: "FD" });
+  assert.match(html, /Gone · -4\.5% EV/);
+  assert.match(html, /Pinnacle moved against this side: fair -100 → \+120/);
+  assert.match(renderCheck({ then, result: { status: "nobook" }, now: NOW, book: "FD" }), /FD no longer offers this line/);
+  assert.match(renderCheck({ then, result: { status: "started" }, now: NOW, book: "FD" }), /Game has started/);
+  assert.match(renderCheck({ then, error: "HTTP 500", now: NOW, book: "FD" }), /Couldn't re-check: HTTP 500/);
+  // edges cards link to /check
+  const edges = renderEdges({ edges: { nba: { at: NOW, hits: [base] } }, token: "t", now: NOW });
+  assert.match(edges, /href="\/check\?token=t&#38;s=basketball_nba[^"]*">Check price/);
+  assert.equal(checkUrl("", "", base), null);
 });
