@@ -15,8 +15,8 @@ export default async (req: Request) => {
   const env = (k: string) => Netlify.env.get(k);
 
   if (url.searchParams.get("test")) {
-    await push(env("NTFY_TOPIC")!, "Line alerts connected", "Test push from your Netlify line monitor. Real alerts look like:\n\nNBA · Cavaliers ML +130 @ FD\n  fair +127 (Pin +122) · EV +3.1% · ~$10", 3);
-    return Response.json({ ok: true, sent: "test push" });
+    const sent = await push(env, "Line alerts connected", "Test push from your Netlify line monitor. Real alerts look like:\n\nNBA · Cavaliers ML +130 @ FD\n  fair +127 (Pin +122) · EV +3.1% · ~$10");
+    return Response.json({ ok: true, sent });
   }
   if (url.searchParams.get("run")) {
     return Response.json(await runMonitor({ store, env, force: true }));
