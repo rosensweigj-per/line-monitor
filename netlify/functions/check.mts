@@ -2,7 +2,7 @@ import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
 import { renderCheck } from "../../lib/page.mjs";
 import { fetchEvent } from "../../lib/run.mjs";
-import { BOOKS, recheck } from "../../lib/scan.mjs";
+import { BOOKS, parseCheckParams, recheck } from "../../lib/scan.mjs";
 import { loadSettings, withSettings } from "../../lib/settings.mjs";
 
 // GET /check?token=…&s=sport&e=event&m=market&n=side&d=player&b=book&o=odds&p=point&f=fair&pp=pinPrice&x=ev&t=foundAt
@@ -13,15 +13,7 @@ export default async (req: Request) => {
   const q = url.searchParams;
   if (!token || q.get("token") !== token) return new Response("Not found", { status: 404 });
 
-  const n = (k: string) => (q.has(k) && q.get(k) !== "" && !Number.isNaN(Number(q.get(k))) ? Number(q.get(k)) : null);
-  const then = {
-    odds: n("o"), point: n("p"), fair: n("f"), pinPrice: n("pp"), ev: n("x"), at: n("t"), bookKey: q.get("b") || "",
-  };
-  const sport = q.get("s") || "";
-  const eventId = q.get("e") || "";
-  const market = q.get("m") || "";
-  const side = q.get("n") || "";
-  const player = q.get("d") || "";
+  const { then, sport, eventId, market, side, player, ok } = parseCheckParams(q);
   const book = BOOKS[then.bookKey as keyof typeof BOOKS] || then.bookKey;
 
   const env = withSettings(
@@ -31,7 +23,7 @@ export default async (req: Request) => {
   const minEv = Number(env(market.startsWith("player_") ? "PROP_MIN_EV" : "MIN_EV") || (market.startsWith("player_") ? 0.04 : 0.03));
 
   let result = null, error = null, game = "", start = null;
-  if (!/^[a-z_]+$/.test(sport) || !eventId || !/^[a-z_]+$/.test(market) || !side || !then.bookKey) {
+  if (!ok) {
     error = "link is missing details";
   } else {
     try {
@@ -44,7 +36,9 @@ export default async (req: Request) => {
       error = /HTTP 404/.test((e as Error).message) ? "game not found (it may have started)" : (e as Error).message;
     }
   }
-  const pick = player ? `${player} ${side} ${then.point ?? ""}` : `${side} ${then.point ?? ""}`;
+  const pick = market === "h2h" ? `${side} ML`
+    : player ? `${player} ${side} ${then.point ?? ""}`
+    : `${side} ${market === "spreads" && (then.point ?? 0) > 0 ? "+" : ""}${then.point ?? ""}`;
   return new Response(
     renderCheck({ then, result, error, token, minEv, book, pick: pick.trim(), game, start }),
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }

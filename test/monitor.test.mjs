@@ -485,3 +485,24 @@ test("check page: verdicts and what changed", () => {
   assert.match(edges, /href="\/check\?token=t&#38;s=basketball_nba[^"]*">Check price/);
   assert.equal(checkUrl("", "", base), null);
 });
+
+test("check links round-trip for moneyline, spread, total, and props (h2h has a digit)", async () => {
+  const { parseCheckParams } = await import("../lib/scan.mjs");
+  const ml = findEdges([edgeGame()], "americanfootball_ncaaf", { now: NOW })[0];
+  const sp = findEdges([game({ pin: [spread(3, -110, -110)], books: { hardrockbet: [spread(3.5, -125, 105)] } })], "basketball_nba", { now: NOW, minEv: 0.02 })[0];
+  const tot = findEdges([game({ pin: [total(220.5, -110, -110)], books: { fanduel: [total(219.5, 106, -130)] } })], "basketball_nba", { now: NOW })[0];
+  const pr = findPropEdges(propEvent(), "basketball_nba", { now: NOW })[0];
+  for (const h of [ml, sp, tot, pr]) {
+    const url = new URL(checkUrl("https://x.netlify.app", "tok", h, NOW));
+    const c = parseCheckParams(url.searchParams);
+    assert.ok(c.ok, `${h.market} link should parse`);
+    assert.equal(c.market, h.market);
+    assert.equal(c.side, h.side);
+    assert.equal(c.player, h.player || "");
+    assert.equal(c.eventId, h.eventId);
+    assert.equal(c.then.bookKey, h.bookKey);
+    assert.equal(c.then.odds, h.odds);
+    assert.equal(c.then.point, h.point ?? null);
+  }
+  assert.equal(parseCheckParams(new URLSearchParams("m=h2h&s=x")).ok, false);
+});
