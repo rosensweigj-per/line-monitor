@@ -17,7 +17,7 @@ Env vars (Netlify site settings): `ODDS_API_KEY`, `RUN_TOKEN`, `PUSHOVER_TOKEN` 
 `PUSHOVER_USER` (your user key). Optional: `PUSHOVER_SOUND`, `NTFY_TOPIC` (also push to ntfy).
 Alerts expire after `ALERT_TTL_MIN` (10; 0 = never) and show when the edge was found. The check link uses
 Netlify's `URL` (override with `SITE_URL`). Alerts with a +5% line go out as Pushover priority 1 (bypasses Pushover quiet hours).
-Tuning: `MIN_EV` (0.03), `MIN_REMAINING` (3000), `SPORTS`, `TIP_INTERVAL_MIN` (5), `NEAR_INTERVAL_MIN` (15),
+Tuning: `MIN_EV` (0.03; per market `MIN_EV_ML`, `MIN_EV_SPREAD`, `MIN_EV_TOTAL` override it), `MIN_REMAINING` (3000), `SPORTS`, `TIP_INTERVAL_MIN` (5), `NEAR_INTERVAL_MIN` (15),
 `FAR_INTERVAL_MIN` (60), `ACTIVE_START_HOUR_ET` (9), `ACTIVE_END_HOUR_ET` (22).
 
 Books: `BOOKS_OFF` turns books off by key or label, e.g. `fanatics,Hard Rock,DK`. Each alert has a tap-to-open

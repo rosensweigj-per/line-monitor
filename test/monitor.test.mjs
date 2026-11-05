@@ -322,7 +322,9 @@ test("settings form round-trips and overrides env vars in a run", async () => {
   form.set("props_basketball_nba", "on");
   form.set("prop_player_points", "on");
   form.set("prop_player_rebounds", "on");
-  form.set("min_ev", "2.5");
+  form.set("min_ev_ml", "2.5");
+  form.set("min_ev_spread", "1.5");
+  form.set("min_ev_total", "2");
   form.set("prop_min_ev", "5");
   form.set("start", "10");
   form.set("end", "23");
@@ -333,7 +335,9 @@ test("settings form round-trips and overrides env vars in a run", async () => {
     SPORTS: "basketball_nba,icehockey_nhl",
     PROP_SPORTS: "basketball_nba",
     PROP_MARKETS: "player_points,player_rebounds",
-    MIN_EV: "0.025",
+    MIN_EV_ML: "0.025",
+    MIN_EV_SPREAD: "0.015",
+    MIN_EV_TOTAL: "0.02",
     PROP_MIN_EV: "0.05",
     ACTIVE_START_HOUR_ET: "10",
     ACTIVE_END_HOUR_ET: "23",
@@ -341,12 +345,14 @@ test("settings form round-trips and overrides env vars in a run", async () => {
   });
 
   const cur = currentSettings(withSettings((k) => ({ MIN_EV: "0.03", BOOKS_OFF: "dk" })[k], saved));
-  assert.equal(cur.minEv, 0.025);
+  assert.equal(cur.minEvMl, 0.025);
+  assert.equal(cur.minEvSpread, 0.015);
   assert.deepEqual([...cur.booksOff], ["fanatics"]);
   const html = renderSettings({ cur, token: "t", custom: true });
   assert.match(html, /name="book_fanatics">/);
   assert.match(html, /name="book_draftkings" checked/);
-  assert.match(html, /name="min_ev"[^>]*value="2.5"/);
+  assert.match(html, /name="min_ev_ml"[^>]*value="2.5"/);
+  assert.match(html, /name="min_ev_spread"[^>]*value="1.5"/);
   assert.match(html, /<option value="23" selected>11 PM/);
   assert.match(html, /Reset to Netlify values/);
 
@@ -359,8 +365,8 @@ test("settings form round-trips and overrides env vars in a run", async () => {
 });
 
 test("settings form guards bad input", () => {
-  const s = parseSettingsForm(new URLSearchParams({ min_ev: "abc", prop_min_ev: "-4", start: "20", end: "8" }));
-  assert.equal(s.MIN_EV, "0.03");
+  const s = parseSettingsForm(new URLSearchParams({ min_ev_ml: "abc", prop_min_ev: "-4", start: "20", end: "8" }));
+  assert.equal(s.MIN_EV_ML, "0.03");
   assert.equal(s.PROP_MIN_EV, "0");
   assert.equal(s.ACTIVE_END_HOUR_ET, "21");
   assert.equal(s.SPORTS, "off");
@@ -531,4 +537,24 @@ test("Shortcut books: buttons run the iPhone Shortcut; others use https links; C
   const h = harness({ BOOK_SHORTCUTS: "betrivers" }, [g]);
   await h.run();
   assert.equal(h.pushes[0].body.url, "shortcuts://run-shortcut?name=Open%20BetRivers");
+});
+
+test("separate EV thresholds for moneyline, spreads, totals (fall back to MIN_EV)", async () => {
+  const { minEvFor } = await import("../lib/settings.mjs");
+  const env = (m) => (k) => m[k];
+  assert.equal(minEvFor(env({}), "h2h"), 0.03);
+  assert.equal(minEvFor(env({ MIN_EV: "0.025" }), "spreads"), 0.025);
+  assert.equal(minEvFor(env({ MIN_EV: "0.025", MIN_EV_SPREAD: "0.015" }), "spreads"), 0.015);
+  assert.equal(minEvFor(env({ MIN_EV_TOTAL: "0" }), "totals"), 0);
+  assert.equal(minEvFor(env({}), "player_points"), 0.04);
+
+  // Same 2% edge on a ML and a spread: only the spread clears when spreads are at 1.5% and ML at 3%.
+  const g = game({
+    pin: [h2h(-110, -110), spread(3, -110, -110)],
+    books: { fanduel: [h2h(104, -130), spread(3, -130, 104)] },
+  });
+  const s = await harness({ MIN_EV_SPREAD: "0.015" }, [g]).run();
+  assert.deepEqual(s.newHits.map((h) => h.market), ["spreads"]);
+  const s2 = await harness({}, [g]).run();
+  assert.equal(s2.newHits.length, 0);
 });

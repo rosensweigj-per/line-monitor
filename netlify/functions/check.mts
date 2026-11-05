@@ -3,7 +3,7 @@ import { getStore } from "@netlify/blobs";
 import { renderCheck } from "../../lib/page.mjs";
 import { fetchEvent } from "../../lib/run.mjs";
 import { BOOKS, parseCheckParams, recheck, resolveBooks } from "../../lib/scan.mjs";
-import { loadSettings, withSettings } from "../../lib/settings.mjs";
+import { loadSettings, minEvFor, withSettings } from "../../lib/settings.mjs";
 
 // GET /check?token=…&s=sport&e=event&m=market&n=side&d=player&b=book&o=odds&p=point&f=fair&pp=pinPrice&x=ev&t=foundAt
 // Re-pulls just that game and market (about 1 credit) and shows whether the edge is still there.
@@ -20,7 +20,7 @@ export default async (req: Request) => {
     (k: string) => Netlify.env.get(k)?.trim(),
     await loadSettings(getStore({ name: "line-monitor", consistency: "strong" }))
   );
-  const minEv = Number(env(market.startsWith("player_") ? "PROP_MIN_EV" : "MIN_EV") || (market.startsWith("player_") ? 0.04 : 0.03));
+  const minEv = minEvFor(env, market);
 
   let result = null, error = null, game = "", start = null;
   if (!ok) {
