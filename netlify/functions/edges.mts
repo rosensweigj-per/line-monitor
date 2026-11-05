@@ -2,6 +2,8 @@ import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
 import { renderEdges } from "../../lib/page.mjs";
 import { runMonitor } from "../../lib/run.mjs";
+import { resolveBooks } from "../../lib/scan.mjs";
+import { loadSettings, withSettings } from "../../lib/settings.mjs";
 
 // GET  /edges?token=RUN_TOKEN -> phone-friendly page of the edges from each sport's latest pull.
 // POST /edges?token=RUN_TOKEN -> "Scan now" button: full scan (ignores cadence and quiet hours), then back to the page.
@@ -17,12 +19,14 @@ export default async (req: Request) => {
     const back = new URL(`/edges?token=${encodeURIComponent(token)}&scanned=1`, url);
     return Response.redirect(back.toString(), 303);
   }
-  const [edges, state, lastRun] = await Promise.all([
+  const [edges, state, lastRun, saved] = await Promise.all([
     store.get("edges", { type: "json" }),
     store.get("state", { type: "json" }),
     store.get("lastRun", { type: "json" }),
+    loadSettings(store),
   ]);
-  return new Response(renderEdges({ edges, state, lastRun, now: Date.now(), token, scanned: url.searchParams.has("scanned") }), {
+  const shortcutBooks = resolveBooks(withSettings((k: string) => Netlify.env.get(k)?.trim(), saved)("BOOK_SHORTCUTS") || "");
+  return new Response(renderEdges({ edges, state, lastRun, now: Date.now(), token, scanned: url.searchParams.has("scanned"), shortcutBooks }), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 };

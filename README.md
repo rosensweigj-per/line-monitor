@@ -22,6 +22,8 @@ Tuning: `MIN_EV` (0.03), `MIN_REMAINING` (3000), `SPORTS`, `TIP_INTERVAL_MIN` (5
 
 Books: `BOOKS_OFF` turns books off by key or label, e.g. `fanatics,Hard Rock,DK`. Each alert has a tap-to-open
 link to the best book (Odds API deep link when available, else the book's site; `BOOK_STATE`, default `va`).
+`BOOK_SHORTCUTS` (or Settings) makes a book's button run an iPhone Shortcut named "Open <Book>" instead, for apps
+whose web links don't open the app (BetRivers: va.betrivers.com has no apple-app-site-association).
 
 Spreads/totals also match when a book has a better number than Pinnacle (e.g. +3.5 vs Pin +3);
 the EV shown is then a floor ("EV ≥"), since Pin's probability at its own number understates it.

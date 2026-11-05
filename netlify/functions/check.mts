@@ -2,7 +2,7 @@ import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
 import { renderCheck } from "../../lib/page.mjs";
 import { fetchEvent } from "../../lib/run.mjs";
-import { BOOKS, parseCheckParams, recheck } from "../../lib/scan.mjs";
+import { BOOKS, parseCheckParams, recheck, resolveBooks } from "../../lib/scan.mjs";
 import { loadSettings, withSettings } from "../../lib/settings.mjs";
 
 // GET /check?token=…&s=sport&e=event&m=market&n=side&d=player&b=book&o=odds&p=point&f=fair&pp=pinPrice&x=ev&t=foundAt
@@ -40,7 +40,7 @@ export default async (req: Request) => {
     : player ? `${player} ${side} ${then.point ?? ""}`
     : `${side} ${market === "spreads" && (then.point ?? 0) > 0 ? "+" : ""}${then.point ?? ""}`;
   return new Response(
-    renderCheck({ then, result, error, token, minEv, book, pick: pick.trim(), game, start }),
+    renderCheck({ then, result, error, token, minEv, book, pick: pick.trim(), game, start, shortcutBooks: resolveBooks(env("BOOK_SHORTCUTS") || "") }),
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
   );
 };

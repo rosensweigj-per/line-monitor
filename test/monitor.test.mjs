@@ -329,6 +329,7 @@ test("settings form round-trips and overrides env vars in a run", async () => {
   const saved = parseSettingsForm(form);
   assert.deepEqual(saved, {
     BOOKS_OFF: "fanatics",
+    BOOK_SHORTCUTS: "",
     SPORTS: "basketball_nba,icehockey_nhl",
     PROP_SPORTS: "basketball_nba",
     PROP_MARKETS: "player_points,player_rebounds",
@@ -505,4 +506,29 @@ test("check links round-trip for moneyline, spread, total, and props (h2h has a 
     assert.equal(c.then.point, h.point ?? null);
   }
   assert.equal(parseCheckParams(new URLSearchParams("m=h2h&s=x")).ok, false);
+});
+
+test("Shortcut books: buttons run the iPhone Shortcut; others use https links; Caesars VA path matches the app", async () => {
+  const { openLink, BOOK_URLS } = await import("../lib/scan.mjs");
+  const sc = new Set(["betrivers"]);
+  assert.equal(openLink("betrivers", "https://va.betrivers.com/x", sc), "shortcuts://run-shortcut?name=Open%20BetRivers");
+  assert.equal(openLink("fanduel", "https://sportsbook.fanduel.com/x", sc), "https://sportsbook.fanduel.com/x");
+  assert.equal(openLink("draftkings", "javascript:x", sc), "https://sportsbook.draftkings.com");
+  assert.match(BOOK_URLS.williamhill_us, /\/us\/va\/bet\/$/);
+
+  const base = { ...findEdges([edgeGame()], "basketball_nba", { now: NOW })[0], book: "BetRivers", bookKey: "betrivers" };
+  const html = renderEdges({ edges: { nba: { at: NOW, hits: [base] } }, now: NOW, shortcutBooks: sc });
+  assert.match(html, /href="shortcuts:\/\/run-shortcut\?name=Open%20BetRivers"[^>]*>Open BetRivers/);
+  const chk = renderCheck({ then: { bookKey: "betrivers", odds: 110 }, result: { status: "ok", hit: base }, now: NOW, book: "BetRivers", shortcutBooks: sc });
+  assert.match(chk, /shortcuts:\/\/run-shortcut\?name=Open%20BetRivers/);
+
+  const saved = parseSettingsForm(new URLSearchParams({ sc_betrivers: "on", book_betrivers: "on" }));
+  assert.equal(saved.BOOK_SHORTCUTS, "betrivers");
+  assert.match(renderSettings({ cur: currentSettings(withSettings(() => undefined, saved)), token: "t" }), /name="sc_betrivers" checked/);
+
+  // Pushover fallback (no site URL) honors shortcuts too
+  const g = game({ pin: [h2h(-110, -110)], books: { betrivers: [h2h(110, -130)] } });
+  const h = harness({ BOOK_SHORTCUTS: "betrivers" }, [g]);
+  await h.run();
+  assert.equal(h.pushes[0].body.url, "shortcuts://run-shortcut?name=Open%20BetRivers");
 });
