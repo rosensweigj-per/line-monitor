@@ -656,3 +656,9 @@ test("settings page is grouped into collapsible sections with summaries; field n
   assert.match(html, /name="book_fanatics">/);
   assert.match(html, /name="sc_betrivers" checked/);
 });
+
+test("check page header names the sport", () => {
+  const then = { odds: 270, ev: 0.046, bookKey: "espnbet", market: "h2h", sportKey: "basketball_ncaab" };
+  assert.match(renderCheck({ then, result: { status: "nobook" }, now: NOW, book: "theScore", pick: "UConn Huskies ML" }),
+    /class="status"><b>NCAAB<\/b> · UConn Huskies ML @ theScore/);
+});
