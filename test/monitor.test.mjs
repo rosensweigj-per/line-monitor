@@ -411,7 +411,7 @@ test("NFL props run: requests only NFL markets and formats the pick", async () =
   assert.match(url, /\/americanfootball_nfl\/events\/g1\/odds/);
   assert.match(url, /markets=player_reception_yds&/);
   assert.match(s.props.americanfootball_nfl, /1 games, 1 edges/);
-  assert.match(h.pushes[0].body.message, /NFL · Travis Kelce Over 54\.5 rec yds \+110 @ FD/);
+  assert.match(h.pushes[0].body.message, /Travis Kelce Over 54\.5 rec yds \+110 @ FD\n.*\n  NFL · Bills @ Chiefs/);
 });
 
 test("edges page: each card has an Open <book> link (deep link, else book site, never non-https)", () => {
@@ -581,4 +581,50 @@ test("scan intervals are editable in settings, clamped to the 5-minute scheduler
   h.mem.settings = { NEAR_INTERVAL_MIN: "10" };
   await h.run(); await h.run(NOW + 5 * 60e3); await h.run(NOW + 10 * 60e3);
   assert.equal(pulls(h), 2);
+});
+
+// --- stake + grade rules ---
+import { stakeFor, gradeFor } from "../lib/scan.mjs";
+
+test("stake and grade rules", () => {
+  const h = (ev, odds = -110, extra = {}) => ({ ev, odds, market: "h2h", sport: "NBA", sportKey: "basketball_nba", ...extra });
+  // base tiers
+  assert.equal(stakeFor(h(0.030)), 10);
+  assert.equal(stakeFor(h(0.049)), 10);
+  assert.equal(stakeFor(h(0.050)), 15);
+  assert.equal(stakeFor(h(0.0795)), 25, "7.95% shows as 8.0% -> 8% tier");
+  assert.equal(stakeFor(h(0.079)), 15);
+  assert.equal(stakeFor(h(0.080)), 25);
+  assert.equal(stakeFor(h(0.119)), 25);
+  assert.equal(stakeFor(h(0.12)), 30);
+  assert.equal(stakeFor(h(0.25)), 30);
+  assert.equal(stakeFor(h(0.02)), 5, "below 3% (lowered threshold) -> $5");
+  // longshot halving, then rounding to nearest $5 (min $5)
+  assert.equal(stakeFor(h(0.046, 200)), 5);   // the example: Kentucky ML +200, EV 4.6% -> $5
+  assert.equal(stakeFor(h(0.046, 199)), 10);
+  assert.equal(stakeFor(h(0.06, 250)), 10);   // 15/2 = 7.5 -> 10
+  assert.equal(stakeFor(h(0.09, 300)), 15);   // 25/2 = 12.5 -> 15
+  assert.equal(stakeFor(h(0.13, 210)), 15);   // 30/2
+  // NCAAF spreads cap $10 (after longshot halving)
+  assert.equal(stakeFor(h(0.09, -110, { market: "spreads", sportKey: "americanfootball_ncaaf", sport: "NCAAF" })), 10);
+  assert.equal(stakeFor(h(0.09, -110, { market: "h2h", sportKey: "americanfootball_ncaaf", sport: "NCAAF" })), 25);
+  assert.equal(stakeFor(h(0.09, -110, { market: "spreads" })), 25);
+  // grades
+  assert.deepEqual([0.08, 0.079, 0.06, 0.059, 0.04, 0.039, 0.03, 0.02].map((e) => gradeFor(h(e))), ["A+", "A", "A", "B", "B", "C", "C", "D"]);
+});
+
+test("alert line format with grade, stake and VERIFY label", () => {
+  const base = {
+    pick: "Kentucky ML", odds: 200, book: "BetRivers", fair: 187, pinPrice: 178, ev: 0.046, market: "h2h",
+    sport: "NCAAB", sportKey: "basketball_ncaab", game: "Tennessee @ Kentucky", start: START, betterLine: false,
+  };
+  const lines = formatHit(base).split("\n");
+  assert.equal(lines[0], "Kentucky ML +200 @ BetRivers");
+  assert.equal(lines[1], "  fair +187 (Pin +178) · EV +4.6% · Grade B · stake $5");
+  assert.match(lines[2], /^  NCAAB · Tennessee @ Kentucky · /);
+  const hot = formatHit({ ...base, odds: 150, ev: 0.135 });
+  assert.match(hot, /EV \+13\.5% · Grade A\+ · stake \$30\n  VERIFY: stale Pinnacle \/ injury\?\n/);
+  // better number sizes off the floor
+  const bn = formatHit({ ...base, pick: "Kentucky +3.5", odds: -110, market: "spreads", betterLine: true, pinPoint: 3, ev: 0.051 });
+  assert.match(bn, /EV ≥ \+5\.1% · Grade B · stake \$15/);
 });

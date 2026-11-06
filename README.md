@@ -25,6 +25,10 @@ link to the best book (Odds API deep link when available, else the book's site; 
 `BOOK_SHORTCUTS` (or Settings) makes a book's button run an iPhone Shortcut named "Open <Book>" instead, for apps
 whose web links don't open the app (BetRivers: va.betrivers.com has no apple-app-site-association).
 
+Stakes (lib/scan.mjs `stakeFor`): EV 3–4.9% $10, 5–7.9% $15, 8–11.9% $25, 12%+ $30 + "VERIFY: stale Pinnacle / injury?"
+(below 3%, only if a threshold is lowered: $5). Better-number alerts size off the EV floor. Then +200 or longer halves,
+NCAAF spreads cap $10, round to nearest $5 (min $5). Grade by EV: 8%+ A+, 6–7.9 A, 4–5.9 B, 3–3.9 C, <3 D.
+
 Spreads/totals also match when a book has a better number than Pinnacle (e.g. +3.5 vs Pin +3);
 the EV shown is then a floor ("EV ≥"), since Pin's probability at its own number understates it.
 
