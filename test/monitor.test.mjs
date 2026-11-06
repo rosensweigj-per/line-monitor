@@ -628,3 +628,31 @@ test("alert line format with grade, stake and VERIFY label", () => {
   const bn = formatHit({ ...base, pick: "Kentucky +3.5", odds: -110, market: "spreads", betterLine: true, pinPoint: 3, ev: 0.051 });
   assert.match(bn, /EV ≥ \+5\.1% · Grade B · stake \$15/);
 });
+
+test("check page shows grade and stake (now and at alert), skip when not +EV", () => {
+  const hit = { ...findEdges([edgeGame()], "basketball_nba", { now: NOW })[0] }; // EV 5% at +110 -> B, $15
+  const then = { odds: 110, fair: -100, pinPrice: -110, ev: 0.05, at: NOW - 60e3, bookKey: "fanduel", market: "h2h", sportKey: "basketball_nba" };
+  let html = renderCheck({ then, result: { status: "ok", hit }, now: NOW, book: "FD" });
+  assert.match(html, /Still \+EV · \+5\.0%<div class="stake">Grade B · stake \$15<\/div>/);
+  assert.match(html, /Grade · stake<\/span><span class="cmp"><span class="then">B · \$15<\/span><span class="now">B · \$15/);
+  html = renderCheck({ then, result: { status: "ok", hit: { ...hit, ev: 0.01 } }, now: NOW, book: "FD" });
+  assert.match(html, /Skip, or at most \$5/);
+  assert.match(html, /<span class="now">skip<\/span>/);
+  html = renderCheck({ then, result: { status: "ok", hit: { ...hit, ev: 0.14 } }, now: NOW, book: "FD" });
+  assert.match(html, /VERIFY: stale Pinnacle/);
+});
+
+test("settings page is grouped into collapsible sections with summaries; field names unchanged", () => {
+  const cur = currentSettings(withSettings((k) => ({ BOOKS_OFF: "fanatics", BOOK_SHORTCUTS: "betrivers" })[k], {}));
+  const html = renderSettings({ cur, token: "t" });
+  assert.equal((html.match(/<details>/g) || []).length, 4);
+  assert.match(html, /<span class="st">Books<\/span><span class="sum">6 of 7 on · 1 via Shortcut/);
+  assert.match(html, /<span class="sum">ML 3% · Spr 3% · Tot 3% · Props 4%/);
+  assert.match(html, /9 AM–10 PM ET · 5\/15\/60 min · props 60 min/);
+  for (const name of ["book_fanatics", "sc_betrivers", "sport_basketball_nba", "props_americanfootball_nfl", "prop_player_points",
+    "min_ev_ml", "min_ev_spread", "min_ev_total", "prop_min_ev", "ttl", "start", "end", "tip_min", "near_min", "far_min", "prop_min", "prop_window"]) {
+    assert.match(html, new RegExp(`name="${name}"`), name);
+  }
+  assert.match(html, /name="book_fanatics">/);
+  assert.match(html, /name="sc_betrivers" checked/);
+});

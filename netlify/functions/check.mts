@@ -40,7 +40,7 @@ export default async (req: Request) => {
     : player ? `${player} ${side} ${then.point ?? ""}`
     : `${side} ${market === "spreads" && (then.point ?? 0) > 0 ? "+" : ""}${then.point ?? ""}`;
   return new Response(
-    renderCheck({ then, result, error, token, minEv, book, pick: pick.trim(), game, start, shortcutBooks: resolveBooks(env("BOOK_SHORTCUTS") || "") }),
+    renderCheck({ then: { ...then, market, sportKey: sport }, result, error, token, minEv, book, pick: pick.trim(), game, start, shortcutBooks: resolveBooks(env("BOOK_SHORTCUTS") || "") }),
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
   );
 };
