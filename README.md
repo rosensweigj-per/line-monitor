@@ -7,7 +7,7 @@ every 5–60 minutes and sends +EV alerts to Pushover (ntfy optional). No Claude
   each sport every 5 min within 1h of a game, 15 min within 4h, else hourly)
 - `netlify/functions/status.mts`: `/status?token=RUN_TOKEN` last run · `&run=1` scan now · `&test=1` test push
 - `netlify/functions/edges.mts`: `/edges?token=RUN_TOKEN` phone page of open edges, with Scan now + Settings
-- `netlify/functions/settings.mts`: `/settings?token=RUN_TOKEN` books, sports, props, EV, hours. Saved to Blobs;
+- `netlify/functions/settings.mts`: `/settings?token=RUN_TOKEN` books, sports, props, EV, scan intervals, hours. Saved to Blobs;
   overrides env vars of the same name (no redeploy). "Reset to Netlify values" clears them.
 - `netlify/functions/check.mts`: `/check?token=…&…` re-prices one bet live (about 1 credit): price/fair/EV then vs now.
   Alerts and edge cards link here first; it then offers Open <book>.

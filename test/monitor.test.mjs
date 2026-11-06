@@ -342,6 +342,11 @@ test("settings form round-trips and overrides env vars in a run", async () => {
     ACTIVE_START_HOUR_ET: "10",
     ACTIVE_END_HOUR_ET: "23",
     ALERT_TTL_MIN: "10",
+    TIP_INTERVAL_MIN: "5",
+    NEAR_INTERVAL_MIN: "15",
+    FAR_INTERVAL_MIN: "60",
+    PROP_INTERVAL_MIN: "60",
+    PROP_WINDOW_HOURS: "6",
   });
 
   const cur = currentSettings(withSettings((k) => ({ MIN_EV: "0.03", BOOKS_OFF: "dk" })[k], saved));
@@ -557,4 +562,23 @@ test("separate EV thresholds for moneyline, spreads, totals (fall back to MIN_EV
   assert.deepEqual(s.newHits.map((h) => h.market), ["spreads"]);
   const s2 = await harness({}, [g]).run();
   assert.equal(s2.newHits.length, 0);
+});
+
+test("scan intervals are editable in settings, clamped to the 5-minute scheduler, and drive the cadence", async () => {
+  const saved = parseSettingsForm(new URLSearchParams({ tip_min: "2", near_min: "10", far_min: "120", prop_min: "30", prop_window: "3" }));
+  assert.equal(saved.TIP_INTERVAL_MIN, "5");
+  assert.equal(saved.NEAR_INTERVAL_MIN, "10");
+  assert.equal(saved.FAR_INTERVAL_MIN, "120");
+  assert.equal(saved.PROP_INTERVAL_MIN, "30");
+  assert.equal(saved.PROP_WINDOW_HOURS, "3");
+  const html = renderSettings({ cur: currentSettings(withSettings(() => undefined, saved)), token: "t" });
+  assert.match(html, /name="near_min"[^>]*value="10"/);
+  assert.match(html, /name="prop_window"[^>]*value="3"/);
+
+  // START is 2h out -> "within 4 hours" cadence, now 10 min from saved settings
+  const pulls = (h) => h.calls.filter((u) => /\/odds\?/.test(u)).length;
+  const h = harness({}, [edgeGame()]);
+  h.mem.settings = { NEAR_INTERVAL_MIN: "10" };
+  await h.run(); await h.run(NOW + 5 * 60e3); await h.run(NOW + 10 * 60e3);
+  assert.equal(pulls(h), 2);
 });
