@@ -33,7 +33,8 @@ NCAAF spreads cap $10, round to nearest $5 (min $5). Grade by EV: 8%+ A+, 6–7.
 scope, values GET only; never writes). Open rows (status pending/blank, incl. bonus/hedge rows) with column `gameKey` = `oddsApiEventId|market|side|point`
 (props: side = "Player Over|Under"; point blank for ML). Tags alerts, edge cards and the check page: same side,
 other side (hedge/middle), other side at the same book (conflict), same game other market. Never suppresses.
-Env: `GOOGLE_SA_EMAIL` + `GOOGLE_SA_KEY` (or `GOOGLE_SERVICE_ACCOUNT_JSON`); optional `BET_TRACKER_SHEET_ID`,
+Env: `BET_TRACKER_CSV_URL` (the Pending tab published to the web as CSV; simplest, used first) or
+`GOOGLE_SA_EMAIL` + `GOOGLE_SA_KEY` (or `GOOGLE_SERVICE_ACCOUNT_JSON`); optional `BET_TRACKER_SHEET_ID`,
 `BET_TRACKER_TAB` (Pending). Share the sheet with the service account as Viewer. Cached 2 min in Blobs.
 
 Spreads/totals also match when a book has a better number than Pinnacle (e.g. +3.5 vs Pin +3);

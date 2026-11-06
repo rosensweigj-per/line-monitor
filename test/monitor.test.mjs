@@ -817,3 +817,34 @@ test("real Pending rows (11/6): UConn/Michigan boost lock and Nicholls St bonus 
   const g = betFlags({ eventId: "c2d8d477513a55a0aa53f905d6b932cb", market: "h2h", side: "UAB Blazers", bookKey: "williamhill_us", book: "Caesars" }, open);
   assert.match(g[0].text, /⚠ You have the other side \(FanDuel Nicholls St Colonels ML \+800 \$50 bonus\) — possible hedge/);
 });
+
+test("published CSV: parsed (quotes, commas, newlines), only GET, flags in alert, preferred over service account", async () => {
+  const { parseCsv } = await import("../lib/bets.mjs");
+  assert.deepEqual(parseCsv('a,b,c\n1,"x, ""y""\nz",3\r\n'), [["a", "b", "c"], ["1", 'x, "y"\nz', "3"]]);
+  const csv = [HEADER.join(","),
+    ['433', 'bet_1', 'DraftKings', 'NCAAB', 'spread', '"UConn -7.5 (UConn @ Michigan) — DK 30% boost, max $10"', '121', '10', '22.1', '1', 'pending', '2026-11-06T13:47:04.000Z', '', '', '', '', 'cash', '', '46332', 'g1|h2h|Celtics|'].join(","),
+  ].join("\n");
+  const url = "https://docs.google.com/spreadsheets/d/e/2PACX-abc/pub?gid=123&single=true&output=csv";
+  const h = harness({ BET_TRACKER_CSV_URL: url, GOOGLE_SA_EMAIL: "x@y", GOOGLE_SA_KEY: "k" }, [edgeGame()]);
+  const inner = globalThis.fetch;
+  const csvCalls = [];
+  globalThis.fetch = async (u, opts = {}) => {
+    if (String(u).startsWith("https://docs.google.com/")) { csvCalls.push(opts.method); return new Response("﻿" + csv); }
+    if (String(u).includes("googleapis")) throw new Error("service account should not be used when a CSV link is set");
+    return inner(u, opts);
+  };
+  const s = await h.run();
+  assert.deepEqual(csvCalls, ["GET"]);
+  assert.deepEqual(s.bets, { open: 1 });
+  assert.match(h.pushes[0].body.message, /✓ You have \$10 on this \(DraftKings \+121\)/);
+
+  // a non-CSV page (link not published as CSV) reports a clear error and still alerts
+  const h2 = harness({ BET_TRACKER_CSV_URL: url }, [edgeGame()]);
+  const inner2 = globalThis.fetch;
+  globalThis.fetch = async (u, opts = {}) => (String(u).startsWith("https://docs.google.com/") ? new Response("<!DOCTYPE html><html>") : inner2(u, opts));
+  const s2 = await h2.run();
+  assert.equal(h2.pushes.length, 1);
+  assert.match(s2.bets.error, /publish the Pending tab as CSV/);
+  const h3 = harness({ BET_TRACKER_CSV_URL: "https://evil.example/x.csv" }, [edgeGame()]);
+  assert.match((await h3.run()).bets.error, /must be a docs\.google\.com/);
+});
