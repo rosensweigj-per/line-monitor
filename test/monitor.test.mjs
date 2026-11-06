@@ -662,3 +662,128 @@ test("check page header names the sport", () => {
   assert.match(renderCheck({ then, result: { status: "nobook" }, now: NOW, book: "theScore", pick: "UConn Huskies ML" }),
     /class="status"><b>NCAAB<\/b> · UConn Huskies ML @ theScore/);
 });
+
+// --- "already bet" flags (Bet Tracker sheet, read-only) ---
+import { gameKeyFor, parseOpenBets, betFlags, bookKeyFromName, isMiddle, loadOpenBets, READONLY_SCOPE } from "../lib/bets.mjs";
+import { generateKeyPairSync } from "node:crypto";
+
+// The sheet's actual header row (Bets tab), checked against the live sheet.
+const HEADER = ["id", "book", "sport", "betType", "pick", "odds", "stake", "potentialPayout", "legs", "status", "loggedAt",
+  "fairOdds", "evPct", "closeFair", "clvPct", "funding", "bonusEarned", "gameDate", "source", "gameKey"];
+const betRow = (o) => HEADER.map((h) => (o[h] ?? ""));
+
+test("gameKey matches the sheet's format for ML, spread, total and props", () => {
+  const ml = findEdges([edgeGame()], "basketball_nba", { now: NOW })[0];
+  assert.equal(gameKeyFor(ml), "g1|h2h|Celtics|");
+  const sp = findEdges([game({ pin: [spread(3, -110, -110)], books: { fanduel: [spread(3.5, -125, 105)] } })], "basketball_nba", { now: NOW, minEv: 0.02 })[0];
+  assert.equal(gameKeyFor(sp), "g1|spreads|Knicks|3.5");
+  const tot = findEdges([game({ pin: [total(220.5, -110, -110)], books: { fanduel: [total(219.5, 106, -130)] } })], "basketball_nba", { now: NOW })[0];
+  assert.equal(gameKeyFor(tot), "g1|totals|Over|219.5");
+  const pr = findPropEdges(propEvent(), "basketball_nba", { now: NOW }).find((h) => h.player === "Jayson Tatum");
+  assert.equal(gameKeyFor(pr), "g1|player_points|Jayson Tatum Over|27.5");
+});
+
+test("parseOpenBets: header-driven columns, pending only, gameKey required, book names mapped", () => {
+  const open = parseOpenBets([
+    HEADER,
+    betRow({ id: "a", book: "theScore Bet", odds: "108", stake: "10", status: "pending", gameKey: "g1|spreads|Knicks|3.5" }),
+    betRow({ id: "b", book: "DraftKings", odds: "-110", stake: "$12.50", status: "win", gameKey: "g1|h2h|Celtics|" }),
+    betRow({ id: "c", book: "FanDuel", odds: "-110", stake: "10", status: "pending", gameKey: "" }),
+    betRow({ id: "d", book: "Hard Rock Bet", odds: "120", stake: "5", status: "Pending", gameKey: "g1|player_points|Jayson Tatum Under|27.5" }),
+  ]);
+  assert.deepEqual(open.map((b) => b.id), ["a", "d"]);
+  assert.equal(open[0].bookKey, "espnbet");
+  assert.equal(open[0].point, 3.5);
+  assert.equal(open[1].bookKey, "hardrockbet");
+  assert.equal(open[1].player, "Jayson Tatum");
+  assert.equal(open[1].ou, "Under");
+  assert.equal(bookKeyFromName("BetRivers"), "betrivers");
+  assert.equal(bookKeyFromName("Caesars"), "williamhill_us");
+  assert.equal(bookKeyFromName("bet365"), "");
+  // reordered columns still work
+  const swapped = [["gameKey", "status", "stake", "book", "odds"], ["g1|h2h|Celtics|", "pending", "7", "FanDuel", "+110"]];
+  assert.equal(parseOpenBets(swapped)[0].stake, 7);
+});
+
+test("betFlags: same side, other side, same-book conflict, same game other market", () => {
+  const hit = { eventId: "g1", market: "spreads", side: "Knicks", point: 3.5, bookKey: "fanduel", book: "FD" };
+  const open = (rows) => parseOpenBets([HEADER, ...rows.map(betRow)]);
+
+  let f = betFlags(hit, open([{ book: "DraftKings", odds: "-110", stake: "10", status: "pending", gameKey: "g1|spreads|Knicks|3" }]));
+  assert.deepEqual(f.map((x) => x.level), ["same"]);
+  assert.match(f[0].text, /^✓ You have \$10 on this \(DraftKings -110 at \+3\)$/);
+
+  f = betFlags(hit, open([{ book: "BetRivers", odds: "-105", stake: "20", status: "pending", gameKey: "g1|spreads|Celtics|-2.5" }]));
+  assert.deepEqual(f.map((x) => x.level), ["opposite"]);
+  assert.match(f[0].text, /⚠ You have the other side \(BetRivers Celtics -2\.5 -105 \$20\) — possible middle\/hedge/);
+
+  f = betFlags(hit, open([{ book: "FanDuel", odds: "-110", stake: "10", status: "pending", gameKey: "g1|spreads|Celtics|-3.5" }]));
+  assert.deepEqual(f.map((x) => x.level), ["conflict"]);
+  assert.match(f[0].text, /⛔ Other side already at FD: Celtics -3\.5 -110 \$10 — never opposite sides at one book/);
+
+  f = betFlags(hit, open([{ book: "Caesars", odds: "105", stake: "10", status: "pending", gameKey: "g1|totals|Over|220.5" }]));
+  assert.deepEqual(f.map((x) => x.level), ["event"]);
+  assert.match(f[0].text, /ℹ Also on this game: Over 220\.5 \+105 \(Caesars\)/);
+
+  // props: other player = same game info; same player other half = opposite
+  const ph = { eventId: "g1", market: "player_points", side: "Over", player: "Jayson Tatum", point: 27.5, bookKey: "fanduel", book: "FD" };
+  f = betFlags(ph, open([
+    { book: "DraftKings", odds: "-115", stake: "10", status: "pending", gameKey: "g1|player_points|Jayson Tatum Under|28.5" },
+    { book: "DraftKings", odds: "-110", stake: "5", status: "pending", gameKey: "g1|player_points|Jalen Brunson Over|26.5" },
+  ]));
+  assert.deepEqual(f.map((x) => x.level), ["opposite", "event"]);
+  assert.match(f[0].text, /middle\/hedge/); // Over 27.5 + Under 28.5 -> 28 wins both
+
+  assert.deepEqual(betFlags({ ...hit, eventId: "zzz" }, open([{ book: "FanDuel", status: "pending", gameKey: "g1|h2h|Celtics|" }])), []);
+  assert.equal(isMiddle({ market: "spreads", point: 3.5 }, { point: -3.5 }), false);
+  assert.equal(isMiddle({ market: "totals", side: "Under", point: 221 }, { point: 221 }), false);
+});
+
+test("sheet is only read: readonly scope, values GET, flags land in the alert, failures never block alerts", async () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const pem = privateKey.export({ type: "pkcs8", format: "pem" });
+  const games = [edgeGame()];
+  const h = harness({ GOOGLE_SA_EMAIL: "monitor@proj.iam.gserviceaccount.com", GOOGLE_SA_KEY: pem.replace(/\n/g, "\\n") }, games);
+  const inner = globalThis.fetch;
+  const google = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.startsWith("https://oauth2.googleapis.com/token")) {
+      const jwt = new URLSearchParams(opts.body).get("assertion");
+      google.push({ u, method: opts.method, claim: JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString()) });
+      return new Response(JSON.stringify({ access_token: "tok" }));
+    }
+    if (u.startsWith("https://sheets.googleapis.com/")) {
+      google.push({ u, method: opts.method || "GET" });
+      return new Response(JSON.stringify({ values: [HEADER, betRow({ book: "BetRivers", odds: "105", stake: "10", status: "pending", gameKey: "g1|h2h|Celtics|" })] }));
+    }
+    return inner(url, opts);
+  };
+  const s = await h.run();
+  assert.equal(google[0].claim.scope, READONLY_SCOPE);
+  assert.ok(google.every((c) => c.u.startsWith("https://oauth2.googleapis.com/token") || c.method === "GET"), "only GETs to Sheets");
+  assert.ok(google.some((c) => /\/spreadsheets\/1-B7rhvOf9bto3u-P_cgtyBJ2I87n13i9bbtxvANyWrY\/values\/Bets!A1%3AZ/.test(c.u)));
+  assert.ok(!google.some((c) => /:batchUpdate|:append|:clear|values\/[^?]*\?.*valueInputOption/.test(c.u)));
+  assert.match(h.pushes[0].body.message, /✓ You have \$10 on this \(BetRivers \+105\)/);
+  assert.deepEqual(s.bets, { open: 1 });
+
+  // sheet down -> alert still goes out, error reported
+  globalThis.fetch = async (url, opts) => (String(url).includes("googleapis") ? new Response("nope", { status: 500 }) : inner(url, opts));
+  const h2 = harness({ GOOGLE_SA_EMAIL: "x@y", GOOGLE_SA_KEY: pem }, [edgeGame()]);
+  const inner2 = globalThis.fetch; // harness replaced fetch; wrap again
+  globalThis.fetch = async (url, opts) => (String(url).includes("googleapis") ? new Response("nope", { status: 500 }) : inner2(url, opts));
+  const s2 = await h2.run();
+  assert.equal(h2.pushes.length, 1);
+  assert.match(s2.bets.error, /Google auth HTTP 500/);
+
+  // no credentials -> feature off, no Google calls
+  const off = await loadOpenBets({ get: async () => null, setJSON: async () => {} }, () => undefined);
+  assert.equal(off.off, true);
+});
+
+test("edges and check pages show the flags", () => {
+  const base = findEdges([edgeGame()], "basketball_nba", { now: NOW })[0];
+  const flags = [{ level: "opposite", text: "⚠ You have the other side (DK Knicks ML +105 $10) — possible hedge" }];
+  assert.match(renderEdges({ edges: { nba: { at: NOW, hits: [base] } }, now: NOW, flagsFor: () => flags }), /<div class="flag opposite">⚠ You have the other side/);
+  assert.match(renderCheck({ then: { bookKey: "fanduel", odds: 110, sportKey: "basketball_nba" }, result: { status: "ok", hit: base }, now: NOW, book: "FD", flags }), /class="flags"><div class="flag opposite">/);
+});

@@ -4,6 +4,7 @@ import { renderEdges } from "../../lib/page.mjs";
 import { runMonitor } from "../../lib/run.mjs";
 import { resolveBooks } from "../../lib/scan.mjs";
 import { loadSettings, withSettings } from "../../lib/settings.mjs";
+import { betFlags, loadOpenBets } from "../../lib/bets.mjs";
 
 // GET  /edges?token=RUN_TOKEN -> phone-friendly page of the edges from each sport's latest pull.
 // POST /edges?token=RUN_TOKEN -> "Scan now" button: full scan (ignores cadence and quiet hours), then back to the page.
@@ -25,8 +26,11 @@ export default async (req: Request) => {
     store.get("lastRun", { type: "json" }),
     loadSettings(store),
   ]);
-  const shortcutBooks = resolveBooks(withSettings((k: string) => Netlify.env.get(k)?.trim(), saved)("BOOK_SHORTCUTS") || "");
-  return new Response(renderEdges({ edges, state, lastRun, now: Date.now(), token, scanned: url.searchParams.has("scanned"), shortcutBooks }), {
+  const env = withSettings((k: string) => Netlify.env.get(k)?.trim(), saved);
+  const shortcutBooks = resolveBooks(env("BOOK_SHORTCUTS") || "");
+  const { open } = await loadOpenBets(store, env);
+  const flagsFor = (h: any) => betFlags(h, open);
+  return new Response(renderEdges({ edges, state, lastRun, now: Date.now(), token, scanned: url.searchParams.has("scanned"), shortcutBooks, flagsFor }), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 };

@@ -4,6 +4,7 @@ import { renderCheck } from "../../lib/page.mjs";
 import { fetchEvent } from "../../lib/run.mjs";
 import { BOOKS, parseCheckParams, recheck, resolveBooks } from "../../lib/scan.mjs";
 import { loadSettings, minEvFor, withSettings } from "../../lib/settings.mjs";
+import { betFlags, loadOpenBets } from "../../lib/bets.mjs";
 
 // GET /check?token=…&s=sport&e=event&m=market&n=side&d=player&b=book&o=odds&p=point&f=fair&pp=pinPrice&x=ev&t=foundAt
 // Re-pulls just that game and market (about 1 credit) and shows whether the edge is still there.
@@ -16,10 +17,8 @@ export default async (req: Request) => {
   const { then, sport, eventId, market, side, player, ok } = parseCheckParams(q);
   const book = BOOKS[then.bookKey as keyof typeof BOOKS] || then.bookKey;
 
-  const env = withSettings(
-    (k: string) => Netlify.env.get(k)?.trim(),
-    await loadSettings(getStore({ name: "line-monitor", consistency: "strong" }))
-  );
+  const store = getStore({ name: "line-monitor", consistency: "strong" });
+  const env = withSettings((k: string) => Netlify.env.get(k)?.trim(), await loadSettings(store));
   const minEv = minEvFor(env, market);
 
   let result = null, error = null, game = "", start = null;
@@ -36,11 +35,14 @@ export default async (req: Request) => {
       error = /HTTP 404/.test((e as Error).message) ? "game not found (it may have started)" : (e as Error).message;
     }
   }
+  const { open } = await loadOpenBets(store, env);
+  const hit = result && (result as any).status === "ok" ? (result as any).hit : null;
+  const flags = ok ? betFlags({ eventId, market, side, player, point: hit?.point ?? then.point, bookKey: then.bookKey, book }, open) : [];
   const pick = market === "h2h" ? `${side} ML`
     : player ? `${player} ${side} ${then.point ?? ""}`
     : `${side} ${market === "spreads" && (then.point ?? 0) > 0 ? "+" : ""}${then.point ?? ""}`;
   return new Response(
-    renderCheck({ then: { ...then, market, sportKey: sport }, result, error, token, minEv, book, pick: pick.trim(), game, start, shortcutBooks: resolveBooks(env("BOOK_SHORTCUTS") || "") }),
+    renderCheck({ then: { ...then, market, sportKey: sport }, result, error, token, minEv, book, pick: pick.trim(), game, start, shortcutBooks: resolveBooks(env("BOOK_SHORTCUTS") || ""), flags }),
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
   );
 };

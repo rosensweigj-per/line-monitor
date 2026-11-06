@@ -29,6 +29,13 @@ Stakes (lib/scan.mjs `stakeFor`): EV 3–4.9% $10, 5–7.9% $15, 8–11.9% $25, 
 (below 3%, only if a threshold is lowered: $5). Better-number alerts size off the EV floor. Then +200 or longer halves,
 NCAAF spreads cap $10, round to nearest $5 (min $5). Grade by EV: 8%+ A+, 6–7.9 A, 4–5.9 B, 3–3.9 C, <3 D.
 
+"Already bet" flags (lib/bets.mjs): reads the Bet Tracker sheet's `Bets` tab, READ-ONLY (spreadsheets.readonly
+scope, values GET only; never writes). Pending rows with column `gameKey` = `oddsApiEventId|market|side|point`
+(props: side = "Player Over|Under"; point blank for ML). Tags alerts, edge cards and the check page: same side,
+other side (hedge/middle), other side at the same book (conflict), same game other market. Never suppresses.
+Env: `GOOGLE_SA_EMAIL` + `GOOGLE_SA_KEY` (or `GOOGLE_SERVICE_ACCOUNT_JSON`); optional `BET_TRACKER_SHEET_ID`,
+`BET_TRACKER_TAB` (Bets). Share the sheet with the service account as Viewer. Cached 2 min in Blobs.
+
 Spreads/totals also match when a book has a better number than Pinnacle (e.g. +3.5 vs Pin +3);
 the EV shown is then a floor ("EV ≥"), since Pin's probability at its own number understates it.
 
