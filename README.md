@@ -6,7 +6,7 @@ every 5–60 minutes and sends +EV alerts to Pushover (ntfy optional). No Claude
 - `netlify/functions/line-monitor.mts`: scheduled run (`*/5 * * * *` UTC; only runs 9 AM–10 PM ET;
   each sport every 5 min within 1h of a game, 15 min within 4h, else hourly)
 - `netlify/functions/status.mts`: `/status?token=RUN_TOKEN` last run · `&run=1` scan now · `&test=1` test push
-- `netlify/functions/edges.mts`: `/edges?token=RUN_TOKEN` phone page of open edges, with Scan now + Settings
+- `netlify/functions/edges.mts`: `/edges?token=RUN_TOKEN` phone page of open edges + Recent alerts (until game start), with Scan now + Settings
 - `netlify/functions/settings.mts`: `/settings?token=RUN_TOKEN` books, sports, props, EV, scan intervals, hours. Saved to Blobs;
   overrides env vars of the same name (no redeploy). "Reset to Netlify values" clears them.
 - `netlify/functions/check.mts`: `/check?token=…&…` re-prices one bet live (about 1 credit): price/fair/EV then vs now.
@@ -15,7 +15,8 @@ every 5–60 minutes and sends +EV alerts to Pushover (ntfy optional). No Claude
 
 Env vars (Netlify site settings): `ODDS_API_KEY`, `RUN_TOKEN`, `PUSHOVER_TOKEN` (app API token),
 `PUSHOVER_USER` (your user key). Optional: `PUSHOVER_SOUND`, `NTFY_TOPIC` (also push to ntfy).
-Alerts expire after `ALERT_TTL_MIN` (10; 0 = never) and show when the edge was found. The check link uses
+One Pushover alert per edge (top `ALERT_MAX_INDIVIDUAL`, default 5, each with its own check link; the rest in one summary
+linking to /edges). Alerts expire after `ALERT_TTL_MIN` (10; 0 = never) and show when the edge was found. The check link uses
 Netlify's `URL` (override with `SITE_URL`). Alerts with a +5% line go out as Pushover priority 1 (bypasses Pushover quiet hours).
 Tuning: `MIN_EV` (0.03; per market `MIN_EV_ML`, `MIN_EV_SPREAD`, `MIN_EV_TOTAL` override it), `MIN_REMAINING` (3000), `SPORTS`, `TIP_INTERVAL_MIN` (5), `NEAR_INTERVAL_MIN` (15),
 `FAR_INTERVAL_MIN` (60), `ACTIVE_START_HOUR_ET` (9), `ACTIVE_END_HOUR_ET` (22).

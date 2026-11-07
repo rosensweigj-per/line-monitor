@@ -170,7 +170,7 @@ test("MIN_EV=0 is honored instead of falling back to 3%", async () => {
   assert.equal((await harness({ MIN_EV: "0" }, [g]).run()).newHits.length, 1);
 });
 
-test("alert body stays under Pushover's 1024-char limit", async () => {
+test("one alert per edge (top 5, each with its own check link), then one summary for the rest", async () => {
   const many = Array.from({ length: 20 }, (_, i) => ({
     ...game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(110 + i, -130)] } }),
     id: `g${i}`,
@@ -178,10 +178,43 @@ test("alert body stays under Pushover's 1024-char limit", async () => {
     away_team: `Away Team Number ${i}`,
   }));
   many.forEach((g, i) => g.bookmakers.forEach((b) => b.markets.forEach((m) => (m.outcomes[0].name = `Home Team Number ${i}`))));
-  const h = harness({}, many);
+  const h = harness({ URL: "https://jason-line-alerts.netlify.app", RUN_TOKEN: "tok" }, many);
   await h.run();
-  assert.ok(h.pushes[0].body.message.length <= 1024);
-  assert.match(h.pushes[0].body.message, /\+\d+ more/);
+  assert.equal(h.pushes.length, 6, "5 individual + 1 summary");
+  const singles = h.pushes.slice(0, 5).map((p) => p.body);
+  // best first, each its own pick and its own /check link for that game
+  assert.match(singles[0].title, /^\+14\.5% A\+ · Home Team Number 19 ML \+129 @ FD$/);
+  assert.deepEqual(singles.map((b) => new URL(b.url).searchParams.get("e")), ["g19", "g18", "g17", "g16", "g15"]);
+  assert.ok(singles.every((b) => b.message.length <= 1024 && /Check price, then open FD/.test(b.url_title)));
+  assert.ok(singles.every((b) => (b.message.match(/ @ FD\n/g) || []).length === 1), "one edge per message");
+  const summary = h.pushes[5].body;
+  assert.equal(summary.title, "+15 more edges");
+  assert.equal(summary.url, "https://jason-line-alerts.netlify.app/edges?token=tok");
+  assert.ok(summary.message.length <= 1024);
+  // setting changes the count
+  const h2 = harness({ ALERT_MAX_INDIVIDUAL: "2" }, many);
+  await h2.run();
+  assert.equal(h2.pushes.length, 3);
+  // recent alerts log keeps every alerted edge for the edges page
+  assert.equal(h.mem.alerts.length, 20);
+  assert.equal(h.mem.alerts[0].alertedAt, NOW);
+});
+
+test("edges page lists recent alerts, marks ones the latest scan no longer has, and drops started games", () => {
+  const [a, b] = findEdges([edgeGame(), { ...game({ pin: [h2h(-110, -110)], books: { draftkings: [h2h(112, -135)] } }), id: "g2" }], "basketball_nba", { now: NOW });
+  const old = { ...a, key: "old", start: new Date(NOW - 1).toISOString(), pick: "Started ML" };
+  const html = renderEdges({
+    edges: { nba: { at: NOW, hits: [a] } },
+    alerts: [{ ...b, alertedAt: NOW - 12 * 60e3 }, { ...a, alertedAt: NOW - 20 * 60e3 }, { ...old, alertedAt: NOW }],
+    token: "t", now: NOW,
+  });
+  assert.match(html, /<h2>Recent alerts<\/h2>/);
+  const recent = html.slice(html.indexOf("Recent alerts"));
+  assert.match(recent, /alerted 12m ago · <b>not in latest scan<\/b>/);
+  assert.match(recent, /alerted 20m ago · still in latest scan/);
+  assert.doesNotMatch(recent, /Started ML/);
+  assert.match(recent, /href="\/check\?token=t&#38;s=basketball_nba&#38;e=g2/);
+  assert.doesNotMatch(renderEdges({ edges: {}, now: NOW }), /Recent alerts/);
 });
 
 test("edges page lists future edges, best first, and escapes text", () => {
@@ -234,7 +267,8 @@ test("props: pulled for games within the window, hourly, and alerted with main l
   assert.equal(h.calls.filter((u) => u.includes("/events/g1/odds")).length, 1);
   assert.match(h.calls.find((u) => u.includes("/events/g1/odds")), /markets=player_points/);
   assert.match(s.props.basketball_nba, /1 games, 2 edges/);
-  assert.match(h.pushes[0].body.message, /Jayson Tatum Over 27\.5 pts \+110 @ FD/);
+  assert.ok(h.pushes.some((p) => /Jayson Tatum Over 27\.5 pts \+110 @ FD/.test(p.body.message)));
+  assert.equal(h.pushes.length, 2, "one alert per prop edge");
   assert.equal(h.mem.edges["props:g1"].hits.length, 2);
   assert.equal(s.remaining, 8999);
 
@@ -342,6 +376,7 @@ test("settings form round-trips and overrides env vars in a run", async () => {
     ACTIVE_START_HOUR_ET: "10",
     ACTIVE_END_HOUR_ET: "23",
     ALERT_TTL_MIN: "10",
+    ALERT_MAX_INDIVIDUAL: "5",
     TIP_INTERVAL_MIN: "5",
     NEAR_INTERVAL_MIN: "15",
     FAR_INTERVAL_MIN: "60",
