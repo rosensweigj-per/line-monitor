@@ -339,7 +339,7 @@ test("edges page has a Scan now button and shows scan results and errors", () =>
   assert.match(html, /<form method="post" action="\/edges\?token=a%20b%26c"/);
   assert.match(html, /Scan now/);
   assert.match(html, /Scan done · 2 new alerts sent/);
-  assert.match(html, /icehockey_nhl: error: HTTP 500 boom/);
+  assert.match(html, /NHL: HTTP 500 boom · Odds API problem, retries next scan/);
   assert.doesNotMatch(html, /basketball_nba: pulled/);
   assert.doesNotMatch(renderEdges({ edges: {}, now: NOW, token: "t" }), /Scan done/);
 });
@@ -882,4 +882,37 @@ test("published CSV: parsed (quotes, commas, newlines), only GET, flags in alert
   assert.match(s2.bets.error, /publish the Pending tab as CSV/);
   const h3 = harness({ BET_TRACKER_CSV_URL: "https://evil.example/x.csv" }, [edgeGame()]);
   assert.match((await h3.run()).bets.error, /must be a docs\.google\.com/);
+});
+
+test("odds pull: 5xx with links falls back to a plain pull (retried once); errors say which request failed", async () => {
+  const { RETRY_DELAY } = await import("../lib/run.mjs");
+  RETRY_DELAY.ms = 1;
+  const h = harness({}, [edgeGame()]);
+  const inner = globalThis.fetch;
+  let plainFails = 1;
+  const seen = [];
+  globalThis.fetch = async (u, o) => {
+    const url = String(u);
+    if (/\/odds\?/.test(url)) {
+      seen.push(url.includes("includeLinks=true") ? "links" : "plain");
+      if (url.includes("includeLinks=true")) return new Response("Internal Server Error", { status: 502 });
+      if (plainFails-- > 0) return new Response("Bad Gateway", { status: 502 });
+    }
+    return inner(u, o);
+  };
+  const s = await h.run();
+  assert.deepEqual(seen, ["links", "plain", "plain"]);
+  assert.match(s.sports.basketball_nba, /pulled 1 games, 1 edges \(no bet links this pull\)/);
+  assert.equal(h.pushes.length, 1);
+
+  // persistent failure is labeled
+  const h2 = harness({}, [edgeGame()]);
+  const inner2 = globalThis.fetch;
+  globalThis.fetch = async (u, o) => (/\/odds\?/.test(String(u)) ? new Response("down", { status: 503 }) : inner2(u, o));
+  assert.match((await h2.run()).sports.basketball_nba, /^error: odds pull: HTTP 503 down$/);
+  const h3 = harness({}, [edgeGame()]);
+  const inner3 = globalThis.fetch;
+  globalThis.fetch = async (u, o) => (/\/events\?/.test(String(u)) ? new Response("nope", { status: 401 }) : inner3(u, o));
+  assert.match((await h3.run()).sports.basketball_nba, /^error: game list: HTTP 401 nope$/);
+  RETRY_DELAY.ms = 1500;
 });
