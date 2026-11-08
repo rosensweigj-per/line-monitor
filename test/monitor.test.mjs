@@ -382,6 +382,7 @@ test("settings form round-trips and overrides env vars in a run", async () => {
     FAR_INTERVAL_MIN: "60",
     PROP_INTERVAL_MIN: "60",
     PROP_WINDOW_HOURS: "6",
+    ALT_DAILY_CAP: "100",
   });
 
   const cur = currentSettings(withSettings((k) => ({ MIN_EV: "0.03", BOOKS_OFF: "dk" })[k], saved));
@@ -1045,4 +1046,130 @@ test("closest misses: best EV per market below the thresholds, shown on the edge
   assert.doesNotMatch(html, /<b>Total<\/b>/);
   // stale (>2h) closest data is hidden
   assert.doesNotMatch(renderEdges({ edges: {}, closest: h.mem.closest, now: NOW + 3 * 3600e3 }), /Closest this hour/);
+});
+
+// --- better numbers: Pinnacle alt lines / ladder / model ---
+import { probsAtBetterNumber, evOf, modelQ, candidatesFrom, refine, priceBetterNumbers, modelFallbackAllowed, crossed } from "../lib/alt.mjs";
+
+const NFL = "americanfootball_nfl";
+const bn = (extra = {}) => ({ // Knicks +3.5 -110 at FD vs Pin Knicks +3 -110/-110 (NFL)
+  key: "g1|spreads|Knicks|3.5|fanduel", sel: "g1|spreads|Knicks", eventId: "g1", sportKey: NFL, sport: "NFL", market: "spreads",
+  side: "Knicks", opp: "Celtics", point: 3.5, pinPoint: 3, p: 0.5, odds: -110, ev: 0.5 * dec(-110) - 1, betterLine: true,
+  book: "FD", bookKey: "fanduel", pick: "Knicks +3.5", game: "Knicks @ Celtics", start: START, fair: -100, pinPrice: -110, ...extra,
+});
+const altMk = (outcomes, ageMin = 5) => ({ key: "alternate_spreads", last_update: new Date(NOW - ageMin * 60e3).toISOString(), outcomes });
+
+test("better-number math: +3 -> +3.5 in the NFL buys the 3", () => {
+  const pr = probsAtBetterNumber({ market: "spreads", side: "Knicks", pinPoint: 3, point: 3.5, p: 0.5, q: (k) => modelQ(NFL, "spreads", k) });
+  assert.ok(Math.abs(pr.win - 0.54) < 1e-9 && pr.push === 0);
+  assert.ok(Math.abs(evOf(pr, -110) - (0.54 * dec(-110) - 1)) < 1e-12); // about +3.1% vs the -4.5% floor
+  // Over 41 -> 40.5 buys the 41; Under 44.5 -> 45 makes 45 a push
+  const o = probsAtBetterNumber({ market: "totals", side: "Over", pinPoint: 41, point: 40.5, p: 0.5, q: (k) => modelQ(NFL, "totals", k) });
+  assert.ok(Math.abs(o.win - (0.5 * (1 - 0.035) + 0.035)) < 1e-9);
+  const u = probsAtBetterNumber({ market: "totals", side: "Under", pinPoint: 44.5, point: 45, p: 0.5, q: (k) => modelQ(NFL, "totals", k) });
+  assert.ok(Math.abs(u.push - 0.02) < 1e-9 && Math.abs(u.win - 0.5) < 1e-9);
+  assert.deepEqual(crossed("spreads", "Celtics", -3.5, -2.5), [-3]);
+  assert.ok(modelFallbackAllowed(bn()));
+  assert.ok(!modelFallbackAllowed(bn({ sportKey: "basketball_nba" })));
+  assert.ok(!modelFallbackAllowed(bn({ point: 4.5, pinPoint: 4 })));
+});
+
+test("candidates: any better number within 1 pt with floor EV > -7% (or a model EV near the bar)", () => {
+  const thr = () => 0.03;
+  assert.equal(candidatesFrom([bn()], thr).length, 1, "the -4.5% floor example now qualifies");
+  assert.equal(candidatesFrom([bn({ point: 4.5 })], thr).length, 0, "more than 1 pt away");
+  assert.equal(candidatesFrom([bn({ odds: -125, ev: 0.5 * dec(-125) - 1 })], thr).length, 0, "floor -10% and model well short");
+  assert.equal(candidatesFrom([bn({ betterLine: false })], thr).length, 0);
+  assert.equal(candidatesFrom([bn({ market: "h2h" })], thr).length, 0);
+});
+
+test("refine: Pin alt at the exact number, ladder for missing numbers, CHECK on disagreement, stale alts ignored", () => {
+  // exact: Pin Knicks +3.5 -125 / Celtics -3.5 +105
+  const exact = altMk([{ name: "Knicks", point: 3.5, price: -125 }, { name: "Celtics", point: -3.5, price: 105 }]);
+  let r = refine(bn(), { altMarket: exact, altFresh: true, opp: "Celtics" });
+  const pAlt = (1 / dec(-125)) / (1 / dec(-125) + 1 / dec(105));
+  assert.equal(r.fairSource, "Pin alt");
+  assert.ok(Math.abs(r.ev - (pAlt * dec(-110) - 1)) < 1e-9);
+  assert.equal(r.check, undefined, "alt within 3 pts of the model");
+  assert.match(r.fairNote, /^Pin alt \+3\.5 -125$/);
+  assert.match(formatHit(r), /fair -\d+ \(Pin alt \+3\.5 -125\) · EV \+\d/);
+  assert.doesNotMatch(formatHit(r), /EV ≥/);
+  // CHECK: Pin alt says +3.5 is a 62% shot, model ~54%
+  const wild = altMk([{ name: "Knicks", point: 3.5, price: -175 }, { name: "Celtics", point: -3.5, price: 150 }]);
+  r = refine(bn(), { altMarket: wild, altFresh: true, opp: "Celtics" });
+  assert.equal(r.check, true);
+  assert.match(r.fairNote, /CHECK: model says/);
+  // ladder: book Knicks +4 vs Pin +3; no +4 alt, but 2.5/3.5/4.5 give landing chances on 3 and 4
+  const ladder = altMk([
+    { name: "Knicks", point: 2.5, price: 108 }, { name: "Celtics", point: -2.5, price: -118 },
+    { name: "Knicks", point: 3.5, price: -128 }, { name: "Celtics", point: -3.5, price: 118 },
+    { name: "Knicks", point: 4.5, price: -140 }, { name: "Celtics", point: -4.5, price: 128 },
+  ]);
+  r = refine(bn({ point: 4, pick: "Knicks +4" }), { altMarket: ladder, altFresh: true, opp: "Celtics" });
+  assert.equal(r.fairSource, "Pin ladder");
+  assert.match(r.fairNote, /lands on 3$/); // +4 wins on 3, pushes on 4
+  assert.ok(r.ev > bn({ point: 4 }).ev, "better than the floor");
+  // stale alt -> model fallback (NFL around 3) ; NBA -> floor kept (null)
+  r = refine(bn(), { altMarket: exact, altFresh: false, opp: "Celtics" });
+  assert.equal(r.fairSource, "model");
+  assert.match(r.fairNote, /model: 3 lands ~8%/);
+  assert.equal(refine(bn({ sportKey: "basketball_nba" }), { altMarket: null, altFresh: false, opp: "Celtics" }), null);
+  // alts more than 1.5 pts from the main line are not trusted
+  const far = altMk([{ name: "Knicks", point: 5, price: -150 }, { name: "Celtics", point: -5, price: 130 }]);
+  assert.equal(refine(bn({ point: 5, pinPoint: 3, sportKey: "basketball_nba" }), { altMarket: far, altFresh: true, opp: "Celtics" }), null);
+});
+
+test("priceBetterNumbers: one alt call per game (all books share it), 15-min cache, daily credit cap", async () => {
+  const mem = {};
+  const store = { get: async (k) => mem[k] ?? null, setJSON: async (k, v) => { mem[k] = structuredClone(v); } };
+  const calls = [];
+  const fetchAlt = async (q) => {
+    calls.push(q);
+    return { json: { bookmakers: [{ key: "pinnacle", markets: [altMk([{ name: "Knicks", point: 3.5, price: -125 }, { name: "Celtics", point: -3.5, price: 105 }])] }] }, headers: new Headers({ "x-requests-last": "1" }) };
+  };
+  const two = [bn(), bn({ key: "g1|spreads|Knicks|3.5|draftkings", bookKey: "draftkings", book: "DK", odds: -105, ev: 0.5 * dec(-105) - 1 })];
+  let out = await priceBetterNumbers(two, { store, fetchAlt, now: NOW });
+  assert.equal(calls.length, 1, "one call for the game");
+  assert.deepEqual(calls[0], { sport: NFL, eventId: "g1", markets: "alternate_spreads" });
+  assert.equal(out.refined.length, 2);
+  assert.equal(out.stats.alt, 2);
+  assert.equal(out.stats.creditsToday, 1);
+  out = await priceBetterNumbers(two, { store, fetchAlt, now: NOW + 10 * 60e3 });
+  assert.equal(calls.length, 1, "cached within 15 min");
+  assert.equal(out.stats.cached, 1);
+  out = await priceBetterNumbers(two, { store, fetchAlt, now: NOW + 16 * 60e3 });
+  assert.equal(calls.length, 2, "refetched after 15 min");
+  // cap reached -> no fetch; NFL +3 -> +3.5 falls back to the model
+  mem.altBudget.used = 100;
+  out = await priceBetterNumbers([bn({ eventId: "g9", key: "g9|x", sel: "g9|x" })], { store, fetchAlt, now: NOW + 17 * 60e3, cap: 100 });
+  assert.equal(calls.length, 2);
+  assert.equal(out.stats.capped, 1);
+  assert.equal(out.refined[0].fairSource, "model");
+});
+
+test("scan: better-number edge priced from Pin alt is alerted; a CHECK edge is shown but not alerted", async () => {
+  // Pin Knicks +3 -110/-110 (floor for FD Knicks +3.5 -105 is -2.4%: no alert before this feature)
+  const mk = () => ({ ...game({ pin: [spread(3, -110, -110)], books: { fanduel: [spread(3.5, -125, -105)] } }), sport_key: NFL });
+  const run = async (altOutcomes) => {
+    const h = harness({ SPORTS: NFL }, [mk()]);
+    const inner = globalThis.fetch;
+    globalThis.fetch = async (u, o) => {
+      if (/bookmakers=pinnacle/.test(String(u)) && /alternate_spreads/.test(String(u))) {
+        return new Response(JSON.stringify({ bookmakers: [{ key: "pinnacle", markets: [altMk(altOutcomes)] }] }), { headers: { "x-requests-last": "1" } });
+      }
+      return inner(u, o);
+    };
+    return { h, s: await h.run() };
+  };
+  let { h, s } = await run([{ name: "Knicks", point: 3.5, price: -135 }, { name: "Celtics", point: -3.5, price: 115 }]);
+  assert.equal(s.altPricing.alt, 1);
+  assert.equal(s.altPricing.creditsToday, 1);
+  assert.equal(h.pushes.length, 1);
+  assert.match(h.pushes[0].body.message, /Knicks \+3\.5 -105 @ FD\n  fair -\d+ \(Pin alt \+3\.5 -135\) · EV \+7\.\d% · Grade A/);
+  assert.match(s.sports[NFL], /1 edges/);
+  // Pin alt wildly off the model -> CHECK: on the edges page, not pushed
+  ({ h, s } = await run([{ name: "Knicks", point: 3.5, price: -250 }, { name: "Celtics", point: -3.5, price: 200 }]));
+  assert.equal(s.altPricing.check, 1);
+  assert.equal(h.pushes.length, 0);
+  assert.match(renderEdges({ edges: h.mem.edges, now: NOW }), /CHECK: Pin alt and model disagree/);
 });

@@ -1,7 +1,8 @@
 import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
 import { renderCheck } from "../../lib/page.mjs";
-import { fetchEvent } from "../../lib/run.mjs";
+import { fetchAltLines, fetchEvent } from "../../lib/run.mjs";
+import { candidatesFrom, priceBetterNumbers } from "../../lib/alt.mjs";
 import { BOOKS, parseCheckParams, recheck, resolveBooks } from "../../lib/scan.mjs";
 import { loadSettings, minEvFor, withSettings } from "../../lib/settings.mjs";
 import { betFlags, loadOpenBets } from "../../lib/bets.mjs";
@@ -31,6 +32,16 @@ export default async (req: Request) => {
       game = ev?.away_team ? `${ev.away_team} @ ${ev.home_team}` : "";
       start = ev?.commence_time || null;
       result = recheck(ev, sport, { market, side, player, bookKey: then.bookKey });
+      const rh = (result as any)?.hit;
+      if (rh?.betterLine) {
+        // same better-number pricing as the scan (shares its 15-min cache and daily cap)
+        const cands = candidatesFrom([rh], () => -1);
+        const { refined } = await priceBetterNumbers(cands.length ? cands : [], {
+          store, cap: Number(env("ALT_DAILY_CAP") ?? 100),
+          fetchAlt: ({ sport: s2, eventId: e2, markets }) => fetchAltLines({ key: env("ODDS_API_KEY"), sport: s2, eventId: e2, markets }),
+        });
+        if (refined[0]) (result as any).hit = refined[0];
+      }
     } catch (e) {
       error = /HTTP 404/.test((e as Error).message) ? "game not found (it may have started)" : (e as Error).message;
     }
