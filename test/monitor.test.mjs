@@ -650,11 +650,11 @@ test("stake and grade rules", () => {
 
 test("alert line format with grade, stake and VERIFY label", () => {
   const base = {
-    pick: "Kentucky ML", odds: 200, book: "BetRivers", fair: 187, pinPrice: 178, ev: 0.046, market: "h2h",
+    pick: "Kentucky ML", odds: 200, book: "BetRivers", bookKey: "betrivers", fair: 187, pinPrice: 178, ev: 0.046, market: "h2h",
     sport: "NCAAB", sportKey: "basketball_ncaab", game: "Tennessee @ Kentucky", start: START, betterLine: false,
   };
   const lines = formatHit(base).split("\n");
-  assert.equal(lines[0], "Kentucky ML +200 @ BetRivers");
+  assert.equal(lines[0], "Kentucky ML +200 @ BR");
   assert.equal(lines[1], "  fair +187 (Pin +178) · EV +4.6% · Grade B · stake $5");
   assert.match(lines[2], /^  NCAAB · Tennessee @ Kentucky · /);
   const hot = formatHit({ ...base, odds: 150, ev: 0.135 });
@@ -994,4 +994,55 @@ test("props status says how many games Pinnacle priced", async () => {
   const noPin = { ...propEvent(), bookmakers: propEvent().bookmakers.filter((b) => b.key !== "pinnacle") };
   const s = await harness({ PROP_SPORTS: "basketball_nba" }, [], noPin).run();
   assert.match(s.props.basketball_nba, /pulled props for 1 games \(Pinnacle priced 0\), 0 edges/);
+});
+
+test("short book names in alerts; pages keep full names", async () => {
+  const { shortBook } = await import("../lib/scan.mjs");
+  assert.deepEqual(["draftkings", "fanduel", "espnbet", "betrivers", "williamhill_us", "fanatics", "hardrockbet"].map((k) => shortBook({ bookKey: k })),
+    ["DK", "FD", "TS", "BR", "CZR", "FAN", "HR"]);
+  const g = game({ pin: [h2h(-110, -110)], books: { betrivers: [h2h(110, -130)] } });
+  const h = harness({}, [g]);
+  await h.run();
+  assert.match(h.pushes[0].body.title, / @ BR$/);
+  assert.match(h.pushes[0].body.message, /^Celtics ML \+110 @ BR\n/);
+  const html = renderEdges({ edges: { nba: { at: NOW, hits: findEdges([g], "basketball_nba", { now: NOW }) } }, now: NOW });
+  assert.match(html, /BetRivers · fair/);
+});
+
+test("edges older than 15 min are greyed; older than an hour fold away", () => {
+  const base = findEdges([edgeGame()], "basketball_nba", { now: NOW })[0];
+  const html = renderEdges({ edges: {
+    a: { at: NOW - 5 * 60e3, hits: [{ ...base, key: "a", pick: "Fresh ML" }] },
+    b: { at: NOW - 25 * 60e3, hits: [{ ...base, key: "b", pick: "Stale ML" }] },
+    c: { at: NOW - 90 * 60e3, hits: [{ ...base, key: "c", pick: "Old ML" }] },
+  }, now: NOW });
+  const main = html.slice(0, html.indexOf('<details class="older">'));
+  assert.match(main, /<li class="hot">\s*<div class="top"><span class="pick">Fresh ML/);
+  assert.match(main, /<li class="hot stale">\s*<div class="top"><span class="pick">Stale ML/);
+  assert.match(main, /seen 25m ago · <b>may be stale, check price<\/b>/);
+  assert.doesNotMatch(main, /Old ML/);
+  assert.match(html, /<summary>Older than 1 hour \(1\) · prices have likely moved<\/summary><ul><li class="hot stale">\s*<div class="top"><span class="pick">Old ML/);
+  // only old edges -> main list says none, old ones still reachable
+  const onlyOld = renderEdges({ edges: { c: { at: NOW - 90 * 60e3, hits: [base] } }, now: NOW });
+  assert.match(onlyOld, /No open edges right now\.[\s\S]*Older than 1 hour \(1\)/);
+});
+
+test("closest misses: best EV per market below the thresholds, shown on the edges page", async () => {
+  // ML at +1% EV (below 3%), spread at -4.5%, no totals; props best +2.4%
+  const g = game({ pin: [h2h(-110, -110), spread(3, -110, -110)], books: { fanduel: [h2h(102, -130), spread(3, -110, -110)] } });
+  const h = harness({ PROP_SPORTS: "basketball_nba", PROP_MIN_EV: "0.5" }, [g], propEvent());
+  const s = await h.run();
+  assert.equal(s.newHits.length, 0, "nothing clears the thresholds");
+  const c = h.mem.closest.basketball_nba.best;
+  assert.ok(Math.abs(c.h2h.ev - 0.01) < 1e-9);
+  assert.equal(c.h2h.pick, "Celtics ML");
+  assert.ok(c.spreads.ev < 0);
+  assert.equal(c.totals, null);
+  assert.ok(h.mem.closest["props:basketball_nba"].best.props.ev > 0.05);
+  const html = renderEdges({ edges: h.mem.edges, closest: h.mem.closest, now: NOW });
+  assert.match(html, /<div class="closest"><span class="cl">Closest this hour<\/span><span[^>]*><b>ML<\/b> <span class="pos">\+1\.0%<\/span> <small>Celtics ML \(FD\)<\/small><\/span><span[^>]*><b>Spread<\/b> <span class="neg">-4\.5%<\/span>/);
+  assert.match(html, /<b>Props<\/b> <span class="pos">≥\+6\.0%<\/span>/);
+  assert.doesNotMatch(html, /<b>Total<\/b>/);
+  // stale (>2h) closest data is hidden
+  assert.doesNotMatch(renderEdges({ edges: {}, closest: h.mem.closest, now: NOW + 3 * 3600e3 }), /Closest this hour/);
 });
