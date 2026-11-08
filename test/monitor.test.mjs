@@ -266,7 +266,7 @@ test("props: pulled for games within the window, hourly, and alerted with main l
   const s = await h.run();
   assert.equal(h.calls.filter((u) => u.includes("/events/g1/odds")).length, 1);
   assert.match(h.calls.find((u) => u.includes("/events/g1/odds")), /markets=player_points/);
-  assert.match(s.props.basketball_nba, /1 games, 2 edges/);
+  assert.match(s.props.basketball_nba, /pulled props for 1 games \(Pinnacle priced 1\), 2 edges/);
   assert.ok(h.pushes.some((p) => /Jayson Tatum Over 27\.5 pts \+110 @ FD/.test(p.body.message)));
   assert.equal(h.pushes.length, 2, "one alert per prop edge");
   assert.equal(h.mem.edges["props:g1"].hits.length, 2);
@@ -445,7 +445,7 @@ test("NFL props run: requests only NFL markets and formats the pick", async () =
   const url = h.calls.find((u) => u.includes("/events/g1/odds"));
   assert.match(url, /\/americanfootball_nfl\/events\/g1\/odds/);
   assert.match(url, /markets=player_reception_yds&/);
-  assert.match(s.props.americanfootball_nfl, /1 games, 1 edges/);
+  assert.match(s.props.americanfootball_nfl, /pulled props for 1 games \(Pinnacle priced 1\), 1 edges/);
   assert.match(h.pushes[0].body.message, /Travis Kelce Over 54\.5 rec yds \+110 @ FD\n.*\n  NFL · Bills @ Chiefs/);
 });
 
@@ -988,4 +988,10 @@ test("already-bet match ignores punctuation and case in names (Jr vs Jr.)", () =
   assert.match(f[0].text, /✓ You have \$10 on this \(DraftKings -130\)/);
   const t = parseOpenBets([HEADER, betRow({ book: "FanDuel", odds: "150", stake: "5", status: "pending", gameKey: "g1|h2h|ST. JOHN'S RED STORM|" })]);
   assert.equal(betFlags({ eventId: "g1", market: "h2h", side: "St. John's Red Storm", bookKey: "fanduel", book: "FD" }, t)[0].level, "same");
+});
+
+test("props status says how many games Pinnacle priced", async () => {
+  const noPin = { ...propEvent(), bookmakers: propEvent().bookmakers.filter((b) => b.key !== "pinnacle") };
+  const s = await harness({ PROP_SPORTS: "basketball_nba" }, [], noPin).run();
+  assert.match(s.props.basketball_nba, /pulled props for 1 games \(Pinnacle priced 0\), 0 edges/);
 });
