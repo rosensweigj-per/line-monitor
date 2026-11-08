@@ -1138,10 +1138,12 @@ test("priceBetterNumbers: one alt call per game (all books share it), 15-min cac
   assert.equal(calls.length, 1, "cached within 15 min");
   assert.equal(out.stats.cached, 1);
   out = await priceBetterNumbers(two, { store, fetchAlt, now: NOW + 16 * 60e3 });
-  assert.equal(calls.length, 2, "refetched after 15 min");
+  assert.equal(calls.length, 1, "game 2h out: cached 30 min");
+  out = await priceBetterNumbers(two, { store, fetchAlt, now: NOW + 31 * 60e3 });
+  assert.equal(calls.length, 2, "refetched after 30 min");
   // cap reached -> no fetch; NFL +3 -> +3.5 falls back to the model
   mem.altBudget.used = 100;
-  out = await priceBetterNumbers([bn({ eventId: "g9", key: "g9|x", sel: "g9|x" })], { store, fetchAlt, now: NOW + 17 * 60e3, cap: 100 });
+  out = await priceBetterNumbers([bn({ eventId: "g9", key: "g9|x", sel: "g9|x" })], { store, fetchAlt, now: NOW + 32 * 60e3, cap: 100 });
   assert.equal(calls.length, 2);
   assert.equal(out.stats.capped, 1);
   assert.equal(out.refined[0].fairSource, "model");
@@ -1237,4 +1239,12 @@ test("alt spending: only games within 4h, basketball floor trigger -5%, cache 60
   assert.equal(n, 1, "still cached at 30 min");
   await priceBetterNumbers([far], { store, fetchAlt, now: NOW + 61 * 60e3 });
   assert.equal(n, 2);
+});
+
+test("alt cache lifetime by time to tip: 15 min last hour, 30 min within 4h, 60 min beyond", async () => {
+  const { altTtl } = await import("../lib/alt.mjs");
+  assert.equal(altTtl(NOW + 45 * 60e3, NOW), 15 * 60e3);
+  assert.equal(altTtl(NOW + 2 * 3600e3, NOW), 30 * 60e3);
+  assert.equal(altTtl(NOW + 5 * 3600e3, NOW), 60 * 60e3);
+  assert.equal(altTtl(NaN, NOW), 15 * 60e3);
 });

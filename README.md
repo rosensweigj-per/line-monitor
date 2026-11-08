@@ -43,7 +43,7 @@ Spreads/totals also match when a book has a better number than Pinnacle (e.g. +3
 ("EV ≥"). lib/alt.mjs then re-prices better numbers within 1 pt, for games within `ALT_WINDOW_HOURS` (4), whose floor EV
 > -7% (-5% basketball) (or whose key-number model EV
 is near the bar): Pinnacle's alternate line at the exact number (one alternate_spreads/alternate_totals call per game,
-bookmakers=pinnacle, cached 15 min, shared by all books), else landing chances from Pin's alt ladder, else the model
+bookmakers=pinnacle, cached 15 min in the last hour / 30 min within 4h / 60 min beyond, shared by all books), else landing chances from Pin's alt ladder, else the model
 only for NFL/NCAAF spreads crossing 3 or 7 ("model"). Alts only within 1.5 pts of the main line and < 45 min old;
 alt vs model > 3 pts of probability -> CHECK (shown on /edges, never alerted). `ALT_DAILY_CAP` (100 credits/day,
 Settings; 0 = no alt fetches). /status `altPricing` shows candidates, fetches, alt/ladder/model/check/floor counts.
