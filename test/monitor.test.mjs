@@ -1173,3 +1173,44 @@ test("scan: better-number edge priced from Pin alt is alerted; a CHECK edge is s
   assert.equal(h.pushes.length, 0);
   assert.match(renderEdges({ edges: h.mem.edges, now: NOW }), /CHECK: Pin alt and model disagree/);
 });
+
+test("alt pricing details: only the needed market, failed/empty fetches spent + cached, ET-day counter, push base, CHECK shows both fairs", async () => {
+  // push base: Pin +3 at 50% with a 9% chance of landing on 3 -> +3.5 wins 50% x 91% + 9% = 54.5% (not 59%)
+  const pr = probsAtBetterNumber({ market: "spreads", side: "Knicks", pinPoint: 3, point: 3.5, p: 0.5, q: () => 0.09 });
+  assert.ok(Math.abs(pr.win - 0.545) < 1e-12);
+  // the cross-check uses that same number: Pin alt at 54.5% agrees with a 9% model, alt at 60% does not
+  const at = (pct) => { const o = Math.round(-100 * pct / (1 - pct)); return altMk([{ name: "Knicks", point: 3.5, price: o }, { name: "Celtics", point: -3.5, price: -o }]); };
+  const nfl9 = bn({ sportKey: NFL });
+  const ok = refine(nfl9, { altMarket: at(0.54), altFresh: true, opp: "Celtics" });
+  assert.equal(ok.check, undefined);
+  assert.ok(Math.abs(ok.modelWin - 0.54) < 1e-9, "model (8% on 3) = 50% x 92% + 8%");
+
+  const mem = {};
+  const store = { get: async (k) => mem[k] ?? null, setJSON: async (k, v) => { mem[k] = structuredClone(v); } };
+  const calls = [];
+  // totals-only candidate -> only alternate_totals requested
+  const tot = bn({ key: "g2|t", sel: "g2|t", eventId: "g2", market: "totals", side: "Over", point: 40.5, pinPoint: 41, pick: "Over 40.5" });
+  await priceBetterNumbers([tot], { store, now: NOW, fetchAlt: async (q) => { calls.push(q.markets); return { json: { bookmakers: [] }, headers: new Headers() }; } });
+  assert.deepEqual(calls, ["alternate_totals"]);
+  assert.equal(mem.altBudget.used, 1, "empty fetch counted as 1 credit");
+  assert.equal(mem.altCache["g2|alternate_totals"].market, null, "'no alt lines' cached");
+  // failed fetch: counted, cached, not retried next cycle
+  const fail = bn({ key: "g3|x", sel: "g3|x", eventId: "g3" });
+  const out = await priceBetterNumbers([fail], { store, now: NOW + 60e3, fetchAlt: async () => { calls.push("boom"); throw new Error("HTTP 500"); } });
+  assert.equal(out.stats.failed, 1);
+  assert.equal(mem.altBudget.used, 2);
+  await priceBetterNumbers([fail], { store, now: NOW + 6 * 60e3, fetchAlt: async () => { calls.push("again"); throw new Error("x"); } });
+  assert.ok(!calls.includes("again"), "not retried within 15 min");
+  // counter resets at midnight ET (NOW is 3 PM ET; +10h = 1 AM ET next day)
+  await priceBetterNumbers([bn({ key: "g4|x", sel: "g4|x", eventId: "g4" })], { store, now: NOW + 10 * 3600e3, fetchAlt: async () => ({ json: { bookmakers: [] }, headers: new Headers({ "x-requests-last": "1" }) }) });
+  assert.equal(mem.altBudget.used, 1);
+  assert.notEqual(mem.altBudget.day, "2026-11-04");
+
+  // CHECK items show alt and model side by side, on the edges card and the check page
+  const chk = refine(nfl9, { altMarket: at(0.62), altFresh: true, opp: "Celtics" });
+  assert.equal(chk.check, true);
+  const card = renderEdges({ edges: { a: { at: NOW, hits: [chk] } }, now: NOW });
+  assert.match(card, /<div class="fairs"><span><b>Pin alt<\/b> fair -\d+ · EV \+\d+\.\d% · win 62\.0%<\/span><span><b>Model<\/b> fair -\d+ · EV \+\d\.\d% · win 54\.0%<\/span><\/div>/);
+  const page = renderCheck({ then: { bookKey: "fanduel", odds: -110, sportKey: NFL, market: "spreads" }, result: { status: "ok", hit: chk }, now: NOW, book: "FD" });
+  assert.match(page, /CHECK: Pin alt and model disagree\.<\/b><div class="fairs">/);
+});
