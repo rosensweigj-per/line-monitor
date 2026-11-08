@@ -140,9 +140,9 @@ const edgeGame = () => game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(110
 
 test("quiet hours: stops at 10 PM ET by default, overridable, and 0 is respected", async () => {
   const at = (h) => Date.parse("2026-11-04T05:00:00Z") + h * 3600e3; // midnight EST + h hours
-  assert.match((await harness({}, []).run(at(22))).skipped, /quiet hours/);
+  assert.match((await harness({}, []).run(at(22))).skipped, /outside scan hours/);
   assert.equal((await harness({}, []).run(at(21) + 45 * 60e3)).skipped, undefined);
-  assert.match((await harness({}, []).run(at(8))).skipped, /quiet hours/);
+  assert.match((await harness({}, []).run(at(8))).skipped, /outside scan hours/);
   assert.equal((await harness({ ACTIVE_END_HOUR_ET: "24" }, []).run(at(22))).skipped, undefined);
   assert.equal((await harness({ ACTIVE_START_HOUR_ET: "0" }, []).run(at(8))).skipped, undefined);
 });
@@ -960,4 +960,32 @@ test("best price: team search, book comparison with EV vs Pinnacle, render", () 
   assert.match(html, /<div class="brow best"><span><a href="https:\/\/sportsbook\.fanduel\.com"[^>]*>FD<\/a><\/span><span><b>\+105<\/b><\/span><span class="pos">2\.5%<\/span>/);
   assert.match(html, /fair -100 \(Pin -110\)/);
   assert.match(renderBest({ q: "zzz", games: [], token: "t" }), /No upcoming game found/);
+});
+
+test("quiet-hours wake-ups keep the last real scan and show a paused note", async () => {
+  const h = harness({}, [edgeGame()]);
+  await h.run(); // real scan at 3 PM ET
+  const night = Date.parse("2026-11-04T05:00:00Z") + 23 * 3600e3; // 11 PM ET same day
+  const s = await h.run(night);
+  assert.match(s.skipped, /outside scan hours \(9 AM–10 PM ET\)/);
+  assert.equal(h.mem.lastRun.at, new Date(NOW).toISOString(), "last real scan time kept");
+  assert.equal(h.mem.lastRun.sports.basketball_nba, "pulled 1 games, 1 edges");
+  await h.run(night + 5 * 60e3); // repeated wake-ups don't lose it
+  assert.equal(h.mem.lastRun.at, new Date(NOW).toISOString());
+  const html = renderEdges({ edges: {}, lastRun: h.mem.lastRun, now: night + 6 * 60e3 });
+  assert.match(html, /Last scan 8h 6m ago · <b>Paused: outside scan hours \(9 AM–10 PM ET\)<\/b>/);
+  assert.doesNotMatch(renderEdges({ edges: {}, lastRun: h.mem.lastRun, now: night + 60 * 60e3 }), /Paused/, "stale pause note hidden");
+  // first ever wake-up during quiet hours
+  const h2 = harness({}, []);
+  await h2.run(night);
+  assert.match(renderEdges({ edges: {}, lastRun: h2.mem.lastRun, now: night }), /No scans yet · <b>Paused/);
+});
+
+test("already-bet match ignores punctuation and case in names (Jr vs Jr.)", () => {
+  const open = parseOpenBets([HEADER, betRow({ book: "DraftKings", odds: "-130", stake: "10", status: "pending", gameKey: "g1|player_rebounds|Wendell Carter Jr. Under|9.5" })]);
+  const f = betFlags({ eventId: "g1", market: "player_rebounds", side: "Under", player: "Wendell Carter Jr", point: 9.5, bookKey: "draftkings", book: "DK" }, open);
+  assert.deepEqual(f.map((x) => x.level), ["same"]);
+  assert.match(f[0].text, /✓ You have \$10 on this \(DraftKings -130\)/);
+  const t = parseOpenBets([HEADER, betRow({ book: "FanDuel", odds: "150", stake: "5", status: "pending", gameKey: "g1|h2h|ST. JOHN'S RED STORM|" })]);
+  assert.equal(betFlags({ eventId: "g1", market: "h2h", side: "St. John's Red Storm", bookKey: "fanduel", book: "FD" }, t)[0].level, "same");
 });
