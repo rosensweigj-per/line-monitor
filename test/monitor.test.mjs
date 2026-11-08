@@ -1248,3 +1248,15 @@ test("alt cache lifetime by time to tip: 15 min last hour, 30 min within 4h, 60 
   assert.equal(altTtl(NOW + 5 * 3600e3, NOW), 60 * 60e3);
   assert.equal(altTtl(NaN, NOW), 15 * 60e3);
 });
+
+test("check page: a priced better number never also says 'floor (no alt price)'; an unpriced one does", () => {
+  const then = { bookKey: "fanduel", odds: -110, sportKey: NFL, market: "totals" };
+  const priced = { ...bn({ market: "totals", side: "Under", point: 43.5, pinPoint: 43, pick: "Under 43.5" }), fairSource: "Pin alt", fairNote: "Pin alt 43.5 -128", ev: 0.037 };
+  const a = renderCheck({ then, result: { status: "ok", hit: priced }, now: NOW, book: "FD" });
+  assert.match(a, /Fair at this number: Pin alt 43\.5 -128/);
+  assert.doesNotMatch(a, /no alt price available/);
+  const floor = bn({ market: "totals", side: "Under", point: 43.5, pinPoint: 43, pick: "Under 43.5" });
+  const b = renderCheck({ then, result: { status: "ok", hit: floor }, now: NOW, book: "FD" });
+  assert.match(b, /EV shown is a floor \(no alt price available\)/);
+  assert.doesNotMatch(b, /Fair at this number/);
+});
