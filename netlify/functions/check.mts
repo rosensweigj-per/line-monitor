@@ -35,7 +35,7 @@ export default async (req: Request) => {
       const rh = (result as any)?.hit;
       if (rh?.betterLine) {
         // same better-number pricing as the scan (shares its 15-min cache and daily cap)
-        const cands = candidatesFrom([rh], () => -1);
+        const cands = candidatesFrom([rh], () => -1, { windowH: Infinity });
         const { refined } = await priceBetterNumbers(cands.length ? cands : [], {
           store, cap: Number(env("ALT_DAILY_CAP") ?? 100),
           fetchAlt: ({ sport: s2, eventId: e2, markets }) => fetchAltLines({ key: env("ODDS_API_KEY"), sport: s2, eventId: e2, markets }),

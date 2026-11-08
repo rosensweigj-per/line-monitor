@@ -1214,3 +1214,27 @@ test("alt pricing details: only the needed market, failed/empty fetches spent + 
   const page = renderCheck({ then: { bookKey: "fanduel", odds: -110, sportKey: NFL, market: "spreads" }, result: { status: "ok", hit: chk }, now: NOW, book: "FD" });
   assert.match(page, /CHECK: Pin alt and model disagree\.<\/b><div class="fairs">/);
 });
+
+test("alt spending: only games within 4h, basketball floor trigger -5%, cache 60 min for far games", async () => {
+  const thr = () => 0.03;
+  const near = bn(); // START is 2h out
+  assert.equal(candidatesFrom([near], thr, { now: NOW }).length, 1);
+  assert.equal(candidatesFrom([bn({ start: new Date(NOW + 6 * 3600e3).toISOString() })], thr, { now: NOW }).length, 0, "6h out: skipped");
+  assert.equal(candidatesFrom([bn({ start: new Date(NOW + 6 * 3600e3).toISOString() })], thr, { now: NOW, windowH: 8 }).length, 1);
+  // basketball: floor -6% no longer qualifies (football still does at -6%)
+  const floor6 = { odds: -125, ev: -0.06 };
+  assert.equal(candidatesFrom([bn({ ...floor6, sportKey: "basketball_ncaab" })], thr, { now: NOW }).length, 0);
+  assert.equal(candidatesFrom([bn({ ...floor6 })], thr, { now: NOW }).length, 1);
+  assert.equal(candidatesFrom([bn({ odds: -110, ev: -0.045, sportKey: "basketball_nba" })], thr, { now: NOW }).length, 1, "-4.5% still qualifies");
+  // far game (only reachable with a wider window) caches 60 min
+  const mem = {};
+  const store = { get: async (k) => mem[k] ?? null, setJSON: async (k, v) => { mem[k] = structuredClone(v); } };
+  const far = bn({ eventId: "gf", key: "gf|x", sel: "gf|x", start: new Date(NOW + 6 * 3600e3).toISOString() });
+  let n = 0;
+  const fetchAlt = async () => { n++; return { json: { bookmakers: [] }, headers: new Headers() }; };
+  await priceBetterNumbers([far], { store, fetchAlt, now: NOW });
+  await priceBetterNumbers([far], { store, fetchAlt, now: NOW + 30 * 60e3 });
+  assert.equal(n, 1, "still cached at 30 min");
+  await priceBetterNumbers([far], { store, fetchAlt, now: NOW + 61 * 60e3 });
+  assert.equal(n, 2);
+});

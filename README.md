@@ -40,7 +40,8 @@ Env: `BET_TRACKER_CSV_URL` (the Pending tab published to the web as CSV; simples
 `BET_TRACKER_TAB` (Pending). Share the sheet with the service account as Viewer. Cached 2 min in Blobs.
 
 Spreads/totals also match when a book has a better number than Pinnacle (e.g. +3.5 vs Pin +3). Base EV is a floor
-("EV ≥"). lib/alt.mjs then re-prices better numbers within 1 pt whose floor EV > -7% (or whose key-number model EV
+("EV ≥"). lib/alt.mjs then re-prices better numbers within 1 pt, for games within `ALT_WINDOW_HOURS` (4), whose floor EV
+> -7% (-5% basketball) (or whose key-number model EV
 is near the bar): Pinnacle's alternate line at the exact number (one alternate_spreads/alternate_totals call per game,
 bookmakers=pinnacle, cached 15 min, shared by all books), else landing chances from Pin's alt ladder, else the model
 only for NFL/NCAAF spreads crossing 3 or 7 ("model"). Alts only within 1.5 pts of the main line and < 45 min old;
