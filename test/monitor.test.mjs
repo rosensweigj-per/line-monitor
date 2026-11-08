@@ -916,3 +916,48 @@ test("odds pull: 5xx with links falls back to a plain pull (retried once); error
   assert.match((await h3.run()).sports.basketball_nba, /^error: game list: HTTP 401 nope$/);
   RETRY_DELAY.ms = 1500;
 });
+
+// --- best price lookup ---
+import { teamMatches, findGames, compareBooks, renderBest } from "../lib/best.mjs";
+
+test("best price: team search, book comparison with EV vs Pinnacle, render", () => {
+  assert.ok(teamMatches("Michigan State Spartans", "mich st"));
+  assert.ok(teamMatches("Michigan State Spartans", "Michigan State"));
+  assert.ok(!teamMatches("Michigan Wolverines", "mich st"));
+  assert.ok(!teamMatches("Michigan State Spartans", ""));
+  const events = { basketball_ncaab: [
+    { id: "e2", commence_time: new Date(NOW + 30 * 3600e3).toISOString(), home_team: "Duke Blue Devils", away_team: "Michigan State Spartans" },
+    { id: "e1", commence_time: new Date(NOW + 2 * 3600e3).toISOString(), home_team: "Michigan State Spartans", away_team: "Oakland Golden Grizzlies" },
+    { id: "e0", commence_time: new Date(NOW - 6 * 3600e3).toISOString(), home_team: "Michigan State Spartans", away_team: "Old Game" },
+    { id: "x", commence_time: new Date(NOW + 3600e3).toISOString(), home_team: "Michigan Wolverines", away_team: "Ohio State Buckeyes" },
+  ], americanfootball_ncaaf: [{ id: "f1", commence_time: new Date(NOW + 5 * 3600e3).toISOString(), home_team: "Indiana Hoosiers", away_team: "Michigan State Spartans" }] };
+  const found = findGames(events, "mich st", NOW);
+  assert.deepEqual(found.map((g) => g.event.id), ["e1", "f1", "e2"]);
+  assert.equal(found[1].team, "Michigan State Spartans");
+
+  const ev = {
+    id: "e1", home_team: "Michigan State Spartans", away_team: "Oakland Golden Grizzlies",
+    bookmakers: [
+      { key: "pinnacle", markets: [
+        { key: "h2h", outcomes: [{ name: "Michigan State Spartans", price: -110 }, { name: "Oakland Golden Grizzlies", price: -110 }] },
+        { key: "spreads", outcomes: [{ name: "Michigan State Spartans", price: -110, point: -3 }, { name: "Oakland Golden Grizzlies", price: -110, point: 3 }] },
+      ] },
+      { key: "fanduel", markets: [{ key: "h2h", outcomes: [{ name: "Michigan State Spartans", price: 105 }] }, { key: "spreads", outcomes: [{ name: "Michigan State Spartans", price: -110, point: -3.5 }] }] },
+      { key: "draftkings", markets: [{ key: "h2h", outcomes: [{ name: "Michigan State Spartans", price: -105 }] }, { key: "spreads", outcomes: [{ name: "Michigan State Spartans", price: -115, point: -2.5 }] }] },
+      { key: "fanatics", markets: [{ key: "h2h", outcomes: [{ name: "Michigan State Spartans", price: 120 }] }] },
+      { key: "betmgm", markets: [{ key: "h2h", outcomes: [{ name: "Michigan State Spartans", price: 150 }] }] },
+    ],
+  };
+  const cmp = compareBooks(ev, "Michigan State Spartans", { skipBooks: new Set(["fanatics"]) });
+  const ml = cmp.h2h[0];
+  assert.deepEqual(ml.rows.map((r) => r.book), ["FD", "DK"], "best first; off books and MGM excluded");
+  assert.ok(Math.abs(ml.rows[0].ev - 0.025) < 1e-9);
+  assert.equal(ml.fair.american, -100);
+  const sp = cmp.spreads[0];
+  assert.deepEqual(sp.rows.map((r) => [r.book, r.point, r.ev == null ? null : +r.ev.toFixed(4), r.floor]), [["DK", -2.5, -0.0652, true], ["FD", -3.5, null, false]]);
+  const html = renderBest({ q: "mich st", games: [{ sport: "basketball_ncaab", event: ev, team: "Michigan State Spartans", cmp }], token: "t", now: NOW });
+  assert.match(html, /NCAAB · Oakland Golden Grizzlies @ Michigan State Spartans/);
+  assert.match(html, /<div class="brow best"><span><a href="https:\/\/sportsbook\.fanduel\.com"[^>]*>FD<\/a><\/span><span><b>\+105<\/b><\/span><span class="pos">2\.5%<\/span>/);
+  assert.match(html, /fair -100 \(Pin -110\)/);
+  assert.match(renderBest({ q: "zzz", games: [], token: "t" }), /No upcoming game found/);
+});
