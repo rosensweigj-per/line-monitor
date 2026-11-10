@@ -1364,3 +1364,23 @@ test("closing capture runs on every wake-up, even outside scan hours, reading th
   assert.equal(h.mem.lastRun.closing.captured, 1);
   assert.deepEqual([...new Set(sheetMethods)], ["GET"], "sheet only read");
 });
+
+test("closing CSV: one row per bet, header, missing rows blank closeFair/source, quoted cells; never pruned", async () => {
+  const { closesToCsv } = await import("../lib/closing.mjs");
+  const closes = [
+    { gameKey: "e2|spreads|Team, Inc|7.5", capturedAt: "2026-11-10T23:52:00.000Z", missing: "Pinnacle has no price at your number", bets: [{ id: "b9", sheetRow: "510", clvPct: null }] },
+    { gameKey: "e1|h2h|Minnesota Golden Gophers|", capturedAt: "2026-11-10T23:50:00.000Z", closeFair: 269, source: "main",
+      bets: [{ id: "b1", sheetRow: "500", clvPct: 3.01 }, { id: "b2", sheetRow: "501", clvPct: -1.5 }] },
+  ];
+  assert.equal(closesToCsv(closes),
+    "id,sheetRow,gameKey,closeFair,clvPct,source,missing,capturedAt\n" +
+    "b1,500,e1|h2h|Minnesota Golden Gophers|,269,3.01,main,,2026-11-10T23:50:00.000Z\n" +
+    "b2,501,e1|h2h|Minnesota Golden Gophers|,269,-1.5,main,,2026-11-10T23:50:00.000Z\n" +
+    'b9,510,"e2|spreads|Team, Inc|7.5",,,,Pinnacle has no price at your number,2026-11-10T23:52:00.000Z\n');
+  assert.equal(closesToCsv([]), "id,sheetRow,gameKey,closeFair,clvPct,source,missing,capturedAt\n");
+  // a capture from months ago survives a new pass
+  const mem = { closing: { old: { gameKey: "old", start: "2026-09-01T00:00:00.000Z", capturedAt: "2026-09-01T00:00:00.000Z", captured: true, bets: [] } } };
+  const store = { get: async (k) => mem[k] ?? null, setJSON: async (k, v) => { mem[k] = structuredClone(v); } };
+  await captureCloses({ store, open: [], getEvents: async () => [], getPinnacle: async () => ({}), now: NOW });
+  assert.ok(mem.closing.old, "kept for the season");
+});

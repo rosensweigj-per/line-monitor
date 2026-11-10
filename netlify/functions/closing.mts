@@ -1,7 +1,10 @@
 import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
+import { closesToCsv } from "../../lib/closing.mjs";
 
-// GET /closing?token=RUN_TOKEN[&since=ISO][&keys=gameKey1,gameKey2]
+// GET /closing?token=RUN_TOKEN[&since=ISO][&keys=gameKey1,gameKey2][&format=csv]
+// format=csv: one row per bet, header id,sheetRow,gameKey,closeFair,clvPct,source,missing,capturedAt (oldest first).
+// Closes are kept for the whole season (append-only).
 // Read-only JSON of Pinnacle closing prices the monitor captured for open bets (last ~10 min before start), at each
 // bet's exact number, with CLV per bet. The tracker fetches this and writes CLV itself; the monitor never writes to
 // the sheet.
@@ -16,6 +19,9 @@ export default async (req: Request) => {
     .filter((c) => (!keys.size || keys.has(c.gameKey)) && (!Number.isFinite(since) || Date.parse(c.capturedAt) >= since))
     .map(({ captured, ...c }) => c)
     .sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
+  if (url.searchParams.get("format") === "csv") {
+    return new Response(closesToCsv(closes), { headers: { "content-type": "text/csv; charset=utf-8", "cache-control": "no-store" } });
+  }
   return Response.json({ generatedAt: new Date().toISOString(), count: closes.length, closes }, { headers: { "cache-control": "no-store" } });
 };
 

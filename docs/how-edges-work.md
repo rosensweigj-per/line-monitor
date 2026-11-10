@@ -75,13 +75,15 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 - Every 5-minute wake-up (even outside scan hours; never below the 3,000-credit floor), the monitor reads open bets
   with a gameKey from the Pending tab. For any game starting within 10 minutes it pulls Pinnacle once (bet markets,
   plus alternate spreads/totals) and records the no-vig closing price at each bet's exact number.
-- Served at `GET /closing?token=…` (optional `&since=ISO`, `&keys=gameKey1,gameKey2`) as JSON. The tracker fetches it
+- Served at `GET /closing?token=…` (optional `&since=ISO`, `&keys=gameKey1,gameKey2`) as JSON, or with `&format=csv`
+  as one row per bet: `id,sheetRow,gameKey,closeFair,clvPct,source,missing,capturedAt` (header included, oldest first). The tracker fetches it
   and writes closeFair / clvPct itself. The monitor never writes to the sheet.
 - Each record: gameKey, sport, eventId, market, side, point, start, capturedAt, minutesBeforeStart,
   closeFair (American, no-vig), closeProb, pinPrice, pinPoint, source (main | alt | prop) — or `missing` with a reason
   (e.g. Pinnacle has no price at your number) — and bets: [{ id, sheetRow, book, odds, stake, clvPct }].
 - clvPct = (closeProb × decimal odds of the bet − 1) × 100. "Close" = Pinnacle's price 5–10 min before start.
 - Bets without a gameKey get no close. Capped at 60 credits/day (`CLOSE_DAILY_CAP`), typically 1–3 per game.
+- Kept for the whole season, append-only: a captured game is never changed or deleted.
 
 ## 10. Monitor fields useful for matching
 sport, game ("Away @ Home"), start (ISO), market, pick, book, bookKey, odds, point, pinPoint, betterLine,
