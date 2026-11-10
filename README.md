@@ -10,6 +10,7 @@ every 5–60 minutes and sends +EV alerts to Pushover (ntfy optional). No Claude
 - `netlify/functions/settings.mts`: `/settings?token=RUN_TOKEN` books, sports, props, EV, scan intervals, hours. Saved to Blobs;
   overrides env vars of the same name (no redeploy). "Reset to Netlify values" clears them.
 - `netlify/functions/best.mts`: `/best?token=…&q=mich st` every book's ML/spread/total for a team's next games, best first, EV vs Pin (~3 credits/game)
+- `netlify/functions/closing.mts`: `/closing?token=…` read-only JSON of Pinnacle closing prices for open bets (CLV), captured ≤10 min before start (lib/closing.mjs)
 - `netlify/functions/check.mts`: `/check?token=…&…` re-prices one bet live (about 1 credit): price/fair/EV then vs now.
   Alerts and edge cards link here first; it then offers Open <book>.
 - `docs/how-edges-work.md`: plain-English summary of how edges, stakes, alerts and tags work

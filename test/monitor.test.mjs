@@ -1260,3 +1260,107 @@ test("check page: a priced better number never also says 'floor (no alt price)';
   assert.match(b, /EV shown is a floor \(no alt price available\)/);
   assert.doesNotMatch(b, /Fair at this number/);
 });
+
+// --- closing lines for CLV (read-only; served at /closing) ---
+import { closeFor, captureCloses, clvPct, sportKeyOf } from "../lib/closing.mjs";
+
+test("closeFor: Pinnacle no-vig at the bet's exact number (main, alt, prop), missing otherwise", () => {
+  const pin = { key: "pinnacle", markets: [
+    { key: "h2h", outcomes: [{ name: "Minnesota Golden Gophers", price: 263 }, { name: "Cincinnati Bearcats", price: -330 }] },
+    { key: "spreads", outcomes: [{ name: "Knicks", price: -110, point: 3 }, { name: "Celtics", price: -110, point: -3 }] },
+    { key: "alternate_spreads", outcomes: [{ name: "Knicks", price: -128, point: 3.5 }, { name: "Celtics", price: 108, point: -3.5 }] },
+    { key: "totals", outcomes: [{ name: "Over", price: -105, point: 43 }, { name: "Under", price: -115, point: 43 }] },
+    { key: "player_points", outcomes: [{ name: "Over", description: "Jayson Tatum", price: -120, point: 27.5 }, { name: "Under", description: "Jayson Tatum", price: 100, point: 27.5 }] },
+  ] };
+  const ml = closeFor({ market: "h2h", side: "Minnesota Golden Gophers" }, pin);
+  const p = (1 / dec(263)) / (1 / dec(263) + 1 / dec(-330));
+  assert.ok(Math.abs(ml.closeProb - p) < 1e-12);
+  assert.equal(ml.source, "main");
+  assert.equal(ml.pinPrice, 263);
+  assert.equal(closeFor({ market: "spreads", side: "Knicks", point: 3 }, pin).source, "main");
+  const alt = closeFor({ market: "spreads", side: "Knicks", point: 3.5 }, pin);
+  assert.equal(alt.source, "alt");
+  assert.equal(alt.pinPrice, -128);
+  assert.match(closeFor({ market: "spreads", side: "Knicks", point: 4.5 }, pin).missing, /no price at your number/);
+  assert.equal(closeFor({ market: "totals", side: "Under", point: 43 }, pin).pinPrice, -115);
+  const pr = closeFor({ market: "player_points", side: "Jayson Tatum Over", player: "Jayson Tatum.", ou: "Over", point: 27.5 }, pin);
+  assert.equal(pr.source, "prop");
+  assert.match(closeFor({ market: "player_points", player: "Jayson Tatum", ou: "Over", point: 28.5 }, pin).missing, /no price/);
+  assert.match(closeFor({ market: "h2h", side: "X" }, null).missing, /no Pinnacle/);
+  assert.equal(clvPct(280, p), +((p * dec(280) - 1) * 100).toFixed(2));
+  assert.equal(sportKeyOf("NCAAB"), "basketball_ncaab");
+  assert.equal(sportKeyOf("nfl"), "americanfootball_nfl");
+});
+
+test("captureCloses: once per game in the last 10 min, alt market for spreads, CLV per bet, daily cap", async () => {
+  const mem = {};
+  const store = { get: async (k) => mem[k] ?? null, setJSON: async (k, v) => { mem[k] = structuredClone(v); } };
+  const start = NOW + 8 * 60e3;
+  const open = parseOpenBets([HEADER,
+    betRow({ id: "b1", sheetRow: "500", book: "theScore Bet", sport: "NCAAB", odds: "280", stake: "10", status: "pending", gameKey: "e1|h2h|Minnesota Golden Gophers|" }),
+    betRow({ id: "b2", sheetRow: "501", book: "FanDuel", sport: "NCAAB", odds: "-110", stake: "10", status: "pending", gameKey: "e1|spreads|Minnesota Golden Gophers|7.5" }),
+    betRow({ id: "b3", sheetRow: "502", book: "DraftKings", sport: "NBA", odds: "-110", stake: "10", status: "pending", gameKey: "e9|totals|Over|220.5" }), // starts in 3h
+    betRow({ id: "b4", sheetRow: "503", book: "FanDuel", sport: "NCAAB", odds: "150", stake: "5", status: "pending", gameKey: "" }), // no key
+  ]);
+  const calls = [];
+  const getEvents = async (sport) => sport === "basketball_ncaab"
+    ? [{ id: "e1", commence_time: new Date(start).toISOString() }]
+    : [{ id: "e9", commence_time: new Date(NOW + 3 * 3600e3).toISOString() }];
+  const getPinnacle = async (q) => {
+    calls.push(q);
+    return { json: { bookmakers: [{ key: "pinnacle", markets: [
+      { key: "h2h", outcomes: [{ name: "Minnesota Golden Gophers", price: 263 }, { name: "Cincinnati Bearcats", price: -330 }] },
+      { key: "spreads", outcomes: [{ name: "Minnesota Golden Gophers", price: -110, point: 7 }, { name: "Cincinnati Bearcats", price: -110, point: -7 }] },
+      { key: "alternate_spreads", outcomes: [{ name: "Minnesota Golden Gophers", price: -125, point: 7.5 }, { name: "Cincinnati Bearcats", price: 105, point: -7.5 }] },
+    ] }] }, headers: new Headers({ "x-requests-last": "3" }) };
+  };
+  // 20 min before: nothing due
+  let s = await captureCloses({ store, open, getEvents, getPinnacle, now: start - 20 * 60e3 });
+  assert.equal(calls.length, 0);
+  assert.equal(s.pendingWithKey, 3);
+  // 8 min before: one call for the game, both bets recorded
+  s = await captureCloses({ store, open, getEvents, getPinnacle, now: NOW });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], { sport: "basketball_ncaab", eventId: "e1", markets: "h2h,spreads,alternate_spreads" });
+  assert.equal(s.captured, 2);
+  assert.equal(s.credits, 3);
+  const ml = mem.closing["e1|h2h|Minnesota Golden Gophers|"];
+  assert.equal(ml.closeFair, toAmerican(ml.closeProb));
+  assert.equal(ml.minutesBeforeStart, 8);
+  assert.equal(ml.bets[0].sheetRow, "500");
+  assert.ok(ml.bets[0].clvPct > 0, "+280 vs a ~+269 close is positive CLV");
+  const sp = mem.closing["e1|spreads|Minnesota Golden Gophers|7.5"];
+  assert.equal(sp.source, "alt");
+  assert.equal(sp.pinPrice, -125);
+  // not captured twice
+  await captureCloses({ store, open, getEvents, getPinnacle, now: NOW + 4 * 60e3 });
+  assert.equal(calls.length, 1);
+  // cap: a fresh store with cap 2 can't afford a 3-market game
+  const mem2 = {};
+  const store2 = { get: async (k) => mem2[k] ?? null, setJSON: async (k, v) => { mem2[k] = structuredClone(v); } };
+  await captureCloses({ store: store2, open, getEvents, getPinnacle, now: NOW, cap: 2 });
+  assert.equal(calls.length, 1);
+});
+
+test("closing capture runs on every wake-up, even outside scan hours, reading the sheet only", async () => {
+  const night = Date.parse("2026-11-04T05:00:00Z") + 23 * 3600e3; // 11 PM ET
+  const url = "https://docs.google.com/spreadsheets/d/e/2PACX-abc/pub?gid=1&single=true&output=csv";
+  const csv = [HEADER.join(","), betRow({ id: "b1", sheetRow: "500", book: "FanDuel", sport: "NBA", odds: "120", stake: "10", status: "pending", gameKey: "n1|h2h|Lakers|" }).join(",")].join("\n");
+  const h = harness({ BET_TRACKER_CSV_URL: url }, []);
+  const inner = globalThis.fetch;
+  const sheetMethods = [];
+  globalThis.fetch = async (u, o = {}) => {
+    const s = String(u);
+    if (s.startsWith("https://docs.google.com/")) { sheetMethods.push(o.method || "GET"); return new Response(csv); }
+    if (/\/events\?/.test(s)) return new Response(JSON.stringify([{ id: "n1", commence_time: new Date(night + 6 * 60e3).toISOString() }]));
+    if (/events\/n1\/odds/.test(s) && /bookmakers=pinnacle/.test(s)) {
+      return new Response(JSON.stringify({ bookmakers: [{ key: "pinnacle", markets: [{ key: "h2h", outcomes: [{ name: "Lakers", price: 110 }, { name: "Suns", price: -130 }] }] }] }), { headers: { "x-requests-last": "1" } });
+    }
+    return inner(u, o);
+  };
+  const s = await h.run(night);
+  assert.match(s.skipped, /outside scan hours/);
+  assert.equal(h.mem.closing["n1|h2h|Lakers|"].pinPrice, 110);
+  assert.equal(h.mem.lastRun.closing.captured, 1);
+  assert.deepEqual([...new Set(sheetMethods)], ["GET"], "sheet only read");
+});
