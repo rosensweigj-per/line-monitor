@@ -24,7 +24,11 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
     alert-bet review: 8 of 11 moneyline bets at +200 or longer fell under 3% EV once re-priced this way.
     The closing-line capture (section 9) and Best price page use the same method, so CLV stays comparable.
 - EV at a book = p × decimal odds − 1.
-- Filters: odds −300 to +300; Pinnacle price < 45 min old; no Virginia college teams; best book per selection only.
+- Filters: odds −300 to the longest-odds cap (`MAX_ODDS`, default +300, set in Settings → Alerts; applies to main
+  lines and props); Pinnacle price < 45 min old; no Virginia college teams; best book per selection only.
+- Extra EV by sport (`EV_BUMP_<sport key>`, Settings → Alerts, default 0): added to every threshold for that sport,
+  e.g. +2% on NCAAB makes a 5% moneyline threshold 7% there. Added 11/11 after college alerts showed weak CLV
+  (NCAAB +2.7%, NCAAF +0.3%, vs NBA +6.2%) and bets at +200 or longer beat the close only 6 of 13 times.
 - Alert thresholds (current): moneyline 5% (4% until 11/11; set to 5% once the power no-vig went live), spreads 3%, totals 3%, props 5%.
 - Moneyline confirmation (`CONFIRM_ML`, on by default; Settings → Alerts): a moneyline edge alerts only after it shows
   up in two pulls in a row for its sport, at least 4 minutes apart. Until then it's on the edges page marked

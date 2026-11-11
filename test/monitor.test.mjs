@@ -384,6 +384,9 @@ test("settings form round-trips and overrides env vars in a run", async () => {
     PROP_INTERVAL_MIN: "60",
     PROP_WINDOW_HOURS: "6",
     ALT_DAILY_CAP: "100",
+    MAX_ODDS: "300",
+    EV_BUMP_americanfootball_nfl: "0", EV_BUMP_americanfootball_ncaaf: "0", EV_BUMP_basketball_nba: "0",
+    EV_BUMP_basketball_ncaab: "0", EV_BUMP_icehockey_nhl: "0", EV_BUMP_baseball_mlb: "0",
   });
 
   const cur = currentSettings(withSettings((k) => ({ MIN_EV: "0.03", BOOKS_OFF: "dk" })[k], saved));
@@ -1582,4 +1585,43 @@ test("next scan: earliest sport due on a 5-minute mark; after hours it is the ne
   // stale / missing info shows nothing
   assert.equal(nextScanText({ at: new Date(NOW - 10 * 60e3).toISOString() }, NOW), "");
   assert.equal(nextScanText(undefined, NOW), "");
+});
+
+test("longest-odds cap and per-sport extra EV (settings + scan + check threshold)", async () => {
+  const { minEvFor } = await import("../lib/settings.mjs");
+  // +250 dog with a real edge: alerts at the default +300 cap, not with the cap at +200; +200 itself is allowed
+  const dog = (price) => game({ pin: [h2h(-250, 215)], books: { fanduel: [h2h(-300, price)] } });
+  assert.equal((await harness({}, [dog(250)]).run()).newHits.length, 1);
+  assert.equal((await harness({ MAX_ODDS: "200" }, [dog(250)]).run()).newHits.length, 0);
+  const pFair = fairProb(215, -250, "h2h");
+  assert.ok(pFair * dec(200) - 1 < 0.03, "sanity: +200 here is not an edge");
+  const even = game({ pin: [h2h(-200, 170)], books: { fanduel: [h2h(-300, 200)] } });
+  assert.equal((await harness({ MAX_ODDS: "200" }, [even]).run()).newHits.length, 1, "+200 exactly is allowed");
+  // props respect the cap too
+  const pe = propEvent();
+  pe.bookmakers[1].markets[0].outcomes[0].price = 210; pe.bookmakers[0].markets[0].outcomes = [...prop("Jayson Tatum", 27.5, 180, -220), ...prop("Jalen Brunson", 26.5, -110, -110)];
+  assert.ok(findPropEdges(pe, "basketball_nba", { now: NOW, maxOdds: 300 }).some((h) => h.player === "Jayson Tatum" && h.side === "Over" && h.odds === 210));
+  assert.ok(!findPropEdges(pe, "basketball_nba", { now: NOW, maxOdds: 200 }).some((h) => h.player === "Jayson Tatum" && h.side === "Over"));
+
+  // per-sport bump: a 5% NCAAB moneyline edge needs 3% + 3% = 6% -> no alert; the same edge in the NBA alerts
+  const g = edgeGame(); // EV exactly 5%
+  const env = (m) => (k) => m[k];
+  assert.equal(minEvFor(env({ EV_BUMP_basketball_ncaab: "0.03" }), "h2h", "basketball_ncaab"), 0.06);
+  assert.equal(minEvFor(env({ EV_BUMP_basketball_ncaab: "0.03" }), "h2h", "basketball_nba"), 0.03);
+  assert.equal(minEvFor(env({ EV_BUMP_basketball_ncaab: "0.03" }), "player_points", "basketball_ncaab"), 0.07);
+  assert.equal((await harness({ SPORTS: "basketball_ncaab", EV_BUMP_basketball_ncaab: "0.03" }, [g]).run()).newHits.length, 0);
+  assert.equal((await harness({ SPORTS: "basketball_ncaab", EV_BUMP_basketball_ncaab: "0.01" }, [g]).run()).newHits.length, 1);
+  assert.equal((await harness({ EV_BUMP_basketball_ncaab: "0.03" }, [g]).run()).newHits.length, 1, "NBA unaffected");
+
+  // settings round-trip and summary line
+  const saved = parseSettingsForm(new URLSearchParams({ max_odds: "200", bump_basketball_ncaab: "2", bump_americanfootball_ncaaf: "3", max_each: "5" }));
+  assert.equal(saved.MAX_ODDS, "200");
+  assert.equal(saved.EV_BUMP_basketball_ncaab, "0.02");
+  assert.equal(saved.EV_BUMP_americanfootball_ncaaf, "0.03");
+  assert.equal(saved.EV_BUMP_basketball_nba, "0");
+  assert.equal(parseSettingsForm(new URLSearchParams({ max_odds: "50" })).MAX_ODDS, "100");
+  const html = renderSettings({ cur: currentSettings(withSettings(() => undefined, saved)), token: "t" });
+  assert.match(html, /name="max_odds"[^>]*value="200"/);
+  assert.match(html, /name="bump_basketball_ncaab"[^>]*value="2"/);
+  assert.match(html, /· max \+200 · NCAAF \+3%, NCAAB \+2%/);
 });

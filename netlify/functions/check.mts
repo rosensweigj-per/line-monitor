@@ -20,7 +20,7 @@ export default async (req: Request) => {
 
   const store = getStore({ name: "line-monitor", consistency: "strong" });
   const env = withSettings((k: string) => Netlify.env.get(k)?.trim(), await loadSettings(store));
-  const minEv = minEvFor(env, market);
+  const minEv = minEvFor(env, market, sport);
 
   let result = null, error = null, game = "", start = null;
   if (!ok) {
