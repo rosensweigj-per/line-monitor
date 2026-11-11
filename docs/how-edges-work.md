@@ -1,6 +1,6 @@
 # Line Monitor — how edges are identified
 
-_Last updated 11/8/2026. Settings marked "current" are editable in the app's Settings page; values here are as of
+_Last updated 11/11/2026. Settings marked "current" are editable in the app's Settings page; values here are as of
 this date._
 
 Alerts-only system (Netlify scheduled function + The Odds API). It never places bets or touches money.
@@ -20,7 +20,7 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
   fair p = implied(side) / (implied(side) + implied(other side)).
 - EV at a book = p × decimal odds − 1.
 - Filters: odds −300 to +300; Pinnacle price < 45 min old; no Virginia college teams; best book per selection only.
-- Alert thresholds (current): moneyline 4%, spreads 3%, totals 3%, props 7%.
+- Alert thresholds (current): moneyline 6% (raised from 4% on 11/11), spreads 3%, totals 3%, props 5%.
 - Moneyline confirmation (`CONFIRM_ML`, on by default; Settings → Alerts): a moneyline edge alerts only after it shows
   up in two pulls in a row for its sport, at least 4 minutes apart. Until then it's on the edges page marked
   "Waiting for the next scan to confirm". If the edge disappears for a pull, it starts over. Added 11/11 after
@@ -44,10 +44,11 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 ## 4. Props
 - Same no-vig method per player line (Over/Under pairs from Pinnacle). A lower Over or higher Under than
   Pinnacle's counts as a better number (floor EV).
-- Checked hourly per game, starting 6h before tip. /status reports how many games Pinnacle actually priced.
+- Checked hourly per game, starting 4h before tip (current). /status reports how many games Pinnacle actually priced.
 
 ## 5. Schedule (current)
-- Scans 9 AM–6 PM ET. Each sport: every 15 min within 4h of a game (5-min option in the last hour), else hourly.
+- Scans 9 AM–6 PM ET. Each sport: every 15 min within 4h of a game (including the last hour; can be set as low
+  as 5 min), else hourly.
 - "Scan now" in the app ignores hours and intervals.
 
 ## 6. Stake and grade (by EV; better-number floors size off the floor)
