@@ -1041,8 +1041,15 @@ test("closest misses: best EV per market below the thresholds, shown on the edge
   assert.ok(c.spreads.ev < 0);
   assert.equal(c.totals, null);
   assert.ok(h.mem.closest["props:basketball_nba"].best.props.ev > 0.05);
-  const html = renderEdges({ edges: h.mem.edges, closest: h.mem.closest, now: NOW });
-  assert.match(html, /<div class="closest"><span class="cl">Closest this hour<\/span><span[^>]*><b>ML<\/b> <span class="pos">\+1\.0%<\/span> <small>Celtics ML \(FD\)<\/small><\/span><span[^>]*><b>Spread<\/b> <span class="neg">-4\.5%<\/span>/);
+  const html = renderEdges({ edges: h.mem.edges, closest: h.mem.closest, now: NOW, token: "t" });
+  assert.match(html, /<div class="closest"><span class="cl">Closest this hour <span class="more">· tap for details<\/span><\/span><span><b>ML<\/b> <span class="pos">\+1\.0%<\/span> <small>Celtics ML \(FD\)<\/small><\/span><span><b>Spread<\/b> <span class="neg">-4\.5%<\/span>/);
+  // expanded: one full line per market with the whole pick, fair price, game and a Check price link
+  const list = html.slice(html.indexOf('<ul class="closelist">'), html.indexOf("</details>"));
+  assert.match(list, /<small>ML<\/small> Celtics ML <b>\+102<\/b> <small>@ FD<\/small><\/span><span class="pos">\+1\.0%/);
+  assert.match(list, /fair -100 \(Pin -110\) · NBA · Knicks @ Celtics · /);
+  assert.match(list, /<small>Props<\/small> Jalen Brunson Under 27\.5 pts <b>\+112<\/b> <small>@ DK<\/small>/);
+  assert.equal((list.match(/href="\/check\?/g) || []).length, 3);
+  assert.match(list, /href="\/check\?[^"]*m=player_points[^"]*d=Jalen\+Brunson/);
   assert.match(html, /<b>Props<\/b> <span class="pos">≥\+6\.0%<\/span>/);
   assert.doesNotMatch(html, /<b>Total<\/b>/);
   // stale (>2h) closest data is hidden
