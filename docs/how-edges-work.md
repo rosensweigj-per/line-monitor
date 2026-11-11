@@ -16,8 +16,13 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
   - NFL: passing yds, passing TDs, completions, rushing yds, receptions, receiving yds, rush+rec yds
 
 ## 2. Fair price and EV
-- Remove the vig from Pinnacle's two-way market (multiplicative):
-  fair p = implied(side) / (implied(side) + implied(other side)).
+- Remove the vig from Pinnacle's two-way market (`fairProb` in lib/scan.mjs):
+  - Spreads, totals, props: multiplicative. fair p = implied(side) / (implied(side) + implied(other side)).
+  - Moneylines: power method. Solve k so implied(side)^k + implied(other)^k = 1; fair p = implied(side)^k.
+    It takes more vig off the underdog than the favorite, so longshot dogs stop looking +EV by default
+    (Pin +225 / −265: fair +248, not +236). Near even money it matches multiplicative. Added 11/11 after the
+    alert-bet review: 8 of 11 moneyline bets at +200 or longer fell under 3% EV once re-priced this way.
+    The closing-line capture (section 9) and Best price page use the same method, so CLV stays comparable.
 - EV at a book = p × decimal odds − 1.
 - Filters: odds −300 to +300; Pinnacle price < 45 min old; no Virginia college teams; best book per selection only.
 - Alert thresholds (current): moneyline 6% (raised from 4% on 11/11), spreads 3%, totals 3%, props 5%.

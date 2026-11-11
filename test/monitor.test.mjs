@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dec, toAmerican, findEdges, findPropEdges, lineOk, formatHit, resolveBooks } from "../lib/scan.mjs";
+import { dec, fairProb, toAmerican, findEdges, findPropEdges, lineOk, formatHit, resolveBooks } from "../lib/scan.mjs";
 import { runMonitor } from "../lib/run.mjs";
 import { renderEdges } from "../lib/page.mjs";
 
@@ -1274,8 +1274,9 @@ test("closeFor: Pinnacle no-vig at the bet's exact number (main, alt, prop), mis
     { key: "player_points", outcomes: [{ name: "Over", description: "Jayson Tatum", price: -120, point: 27.5 }, { name: "Under", description: "Jayson Tatum", price: 100, point: 27.5 }] },
   ] };
   const ml = closeFor({ market: "h2h", side: "Minnesota Golden Gophers" }, pin);
-  const p = (1 / dec(263)) / (1 / dec(263) + 1 / dec(-330));
+  const p = fairProb(263, -330, "h2h"); // moneylines: power no-vig, same as the scan
   assert.ok(Math.abs(ml.closeProb - p) < 1e-12);
+  assert.ok(p < (1 / dec(263)) / (1 / dec(263) + 1 / dec(-330)), "the dog's fair chance is below the multiplicative one");
   assert.equal(ml.source, "main");
   assert.equal(ml.pinPrice, 263);
   assert.equal(closeFor({ market: "spreads", side: "Knicks", point: 3 }, pin).source, "main");
@@ -1329,7 +1330,8 @@ test("captureCloses: once per game in the last 10 min, alt market for spreads, C
   assert.equal(ml.closeFair, toAmerican(ml.closeProb));
   assert.equal(ml.minutesBeforeStart, 8);
   assert.equal(ml.bets[0].sheetRow, "500");
-  assert.ok(ml.bets[0].clvPct > 0, "+280 vs a ~+269 close is positive CLV");
+  assert.equal(ml.closeFair, 302); // power no-vig of +263 / -330 (multiplicative would say +276)
+  assert.ok(ml.bets[0].clvPct < 0, "+280 vs a +302 close is negative CLV");
   const sp = mem.closing["e1|spreads|Minnesota Golden Gophers|7.5"];
   assert.equal(sp.source, "alt");
   assert.equal(sp.pinPrice, -125);
@@ -1419,4 +1421,26 @@ test("moneyline confirmation: alert only when the edge holds across two pulls; s
   assert.equal(currentSettings(() => undefined).confirmMl, true);
   assert.equal(parseSettingsForm(new URLSearchParams({ confirm_ml: "on" })).CONFIRM_ML, "1");
   assert.match(renderSettings({ cur: currentSettings(() => undefined), token: "t" }), /name="confirm_ml" checked/);
+});
+
+test("fairProb: power no-vig for moneylines, multiplicative for everything else", () => {
+  const mult = (a, b) => (1 / dec(a)) / (1 / dec(a) + 1 / dec(b));
+  // even money: both methods agree exactly
+  assert.equal(fairProb(-110, -110, "h2h"), 0.5);
+  // both sides always sum to 1
+  for (const [a, b] of [[225, -265], [-150, 130], [400, -500], [105, -125]]) {
+    assert.ok(Math.abs(fairProb(a, b, "h2h") + fairProb(b, a, "h2h") - 1) < 1e-9);
+  }
+  // longshot dog: fair chance drops (Temple +225 / -265: mult fair +236, power fair about +248)
+  assert.equal(toAmerican(mult(225, -265)), 236);
+  const temple = toAmerican(fairProb(225, -265, "h2h"));
+  assert.ok(temple >= 246 && temple <= 250, `got ${temple}`);
+  // near even money the two methods are within half a point
+  assert.ok(Math.abs(fairProb(105, -125, "h2h") - mult(105, -125)) < 0.005);
+  // spreads, totals and props are unchanged
+  for (const mk of ["spreads", "totals", "player_points"]) assert.equal(fairProb(-128, 108, mk), mult(-128, 108));
+  // a +250 dog vs Pinnacle +225 / -265 no longer clears a 3% threshold
+  const g = game({ pin: [h2h(-265, 225)], books: { fanduel: [h2h(-300, 250)] } });
+  assert.equal(findEdges([g], "basketball_ncaab", { now: NOW, minEv: 0.03 }).length, 0);
+  assert.ok(mult(225, -265) * dec(250) - 1 > 0.03, "the old method called this +4%");
 });
