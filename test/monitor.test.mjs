@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dec, fairProb, toAmerican, crowdNote, findEdges, findPropEdges, lineOk, formatHit, resolveBooks } from "../lib/scan.mjs";
+import { dec, fairProb, toAmerican, crowdNote, findEdges, findPropEdges, lineOk, formatHit, resolveBooks, pinMove } from "../lib/scan.mjs";
 import { runMonitor } from "../lib/run.mjs";
 import { renderEdges } from "../lib/page.mjs";
 
@@ -1504,4 +1504,40 @@ test("crowd note wording follows who moved: Pinnacle unchanged -> VERIFY, Pinnac
   const html = renderEdges({ edges: h.mem.edges, alerts: h.mem.alerts, now: NOW + 12 * 60e3 });
   assert.match(html, /<div class="flag event">Also \+EV at HR — Pinnacle moved/);
   assert.match(html.slice(html.indexOf("Recent alerts")), /Also \+EV at HR|VERIFY: also \+EV at HR/);
+});
+
+test("pinMove: direction, size and number changes decide who moved", () => {
+  const ml = { market: "h2h", side: "Celtics" };
+  assert.equal(pinMove(undefined, { p: 0.5, pt: null }, ml), null, "first sight");
+  assert.equal(pinMove("-110|", { p: 0.5, pt: null }, ml), null, "old saved format");
+  assert.equal(pinMove({ p: 0.5, pt: null }, { p: 0.502, pt: null }, ml), false, "a one-cent tick is not a move");
+  assert.equal(pinMove({ p: 0.5, pt: null }, { p: 0.509, pt: null }, ml), true, "toward this side");
+  assert.equal(pinMove({ p: 0.5, pt: null }, { p: 0.48, pt: null }, ml), "against", "toward the books' longer price");
+  // FAMU 11/11: Pinnacle went +7.5 -> +8.5 on the dog the books were long on = against, whatever the prices
+  const dog = { market: "spreads", side: "Florida A&M Rattlers" };
+  assert.equal(pinMove({ p: 0.5, pt: 7.5 }, { p: 0.52, pt: 8.5 }, dog), "against");
+  assert.equal(pinMove({ p: 0.5, pt: 7.5 }, { p: 0.48, pt: 6.5 }, dog), true);
+  assert.equal(pinMove({ p: 0.5, pt: -3 }, { p: 0.5, pt: -4 }, { market: "spreads", side: "Celtics" }), true);
+  assert.equal(pinMove({ p: 0.5, pt: 216 }, { p: 0.5, pt: 217 }, { market: "totals", side: "Over" }), true);
+  assert.equal(pinMove({ p: 0.5, pt: 216 }, { p: 0.5, pt: 217 }, { market: "totals", side: "Under" }), "against");
+});
+
+test("crowd note: Pinnacle catching up to the books is VERIFY; an old previous pull is unknown", async () => {
+  const mk = (pinHome, pinAway) => game({ pin: [h2h(pinHome, pinAway)], books: { fanduel: [h2h(125, -150)], hardrockbet: [h2h(122, -146)] } });
+  const games = [mk(-110, -110)];
+  const h = harness({ NEAR_INTERVAL_MIN: "5", MIN_EV: "0.03" }, games);
+  await h.run();
+  // Pinnacle drifts toward the books' long price on this side; the edge is still there but closing
+  games[0].bookmakers[0].markets = [h2h(102, -122)];
+  games[0].bookmakers[1].markets = [h2h(127, -152)];
+  await h.run(NOW + 6 * 60e3);
+  assert.equal(h.mem.edges.basketball_nba.hits[0].pinMoved, "against");
+  assert.match(h.pushes.at(-1).body.message, /VERIFY: also \+EV at HR — Pinnacle is moving toward the books' price/);
+  // an hour later Pinnacle has moved back toward this side, but the previous pull is too old to say who moved
+  games[0].bookmakers[0].markets = [h2h(-110, -110)];
+  games[0].bookmakers[0].last_update = new Date(NOW + 68 * 60e3).toISOString();
+  games[0].bookmakers[1].markets = [h2h(129, -154)];
+  await h.run(NOW + 70 * 60e3);
+  assert.equal(h.mem.edges.basketball_nba.hits[0].pinMoved, null);
+  assert.match(h.pushes.at(-1).body.message, /VERIFY: also \+EV at HR — books may be moving on news/);
 });

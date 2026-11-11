@@ -34,7 +34,11 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
   side of a game (moneyline and spread count as one side; totals by Over/Under), the alert and the edges page add
   "VERIFY: also +EV at HR, BR — books may be moving on news, Pinnacle may be stale". If Pinnacle's own price for that
   pick changed since the monitor's previous pull, the note instead reads "Also +EV at HR, BR — Pinnacle moved since
-  the last scan, books may be lagging" (Pinnacle leading is the usual real edge). Nothing is suppressed and the
+  the last scan, books may be lagging" (Pinnacle leading is the usual real edge). Direction and size count
+  (`pinMove`): only a move TOWARD the pick of at least half a point of win chance (or a number change in its favor)
+  gets the softer note. Pinnacle moving toward the books' longer price reads "VERIFY: ... Pinnacle is moving toward
+  the books' price, edge may be closing". A one-cent tick, a first sighting, or a previous pull more than 20 minutes
+  old all get the standard VERIFY. Nothing is suppressed and the
   stake is unchanged. Added 11/11: in the alert-bet record, main-line bets where 2+ books beat fair went 1–9 with
   −0.4% CLV, against +3.0% CLV when only one book was out of line (FAMU +8.5 on 11/11: Pinnacle moved a full point
   toward UMKC within the hour). Props are not tagged (books rarely agree there, and prop CLV is good).
