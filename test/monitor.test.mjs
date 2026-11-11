@@ -975,12 +975,12 @@ test("quiet-hours wake-ups keep the last real scan and show a paused note", asyn
   await h.run(night + 5 * 60e3); // repeated wake-ups don't lose it
   assert.equal(h.mem.lastRun.at, new Date(NOW).toISOString());
   const html = renderEdges({ edges: {}, lastRun: h.mem.lastRun, now: night + 6 * 60e3 });
-  assert.match(html, /Last scan 8h 6m ago · <b>Paused: outside scan hours \(9 AM–10 PM ET\)<\/b>/);
+  assert.match(html, /Last scan 8h 6m ago · Next scan 9:00 AM ET · <b>Paused: outside scan hours \(9 AM–10 PM ET\)<\/b>/);
   assert.doesNotMatch(renderEdges({ edges: {}, lastRun: h.mem.lastRun, now: night + 60 * 60e3 }), /Paused/, "stale pause note hidden");
   // first ever wake-up during quiet hours
   const h2 = harness({}, []);
   await h2.run(night);
-  assert.match(renderEdges({ edges: {}, lastRun: h2.mem.lastRun, now: night }), /No scans yet · <b>Paused/);
+  assert.match(renderEdges({ edges: {}, lastRun: h2.mem.lastRun, now: night }), /No scans yet · Next scan 9:00 AM ET · <b>Paused/);
 });
 
 test("already-bet match ignores punctuation and case in names (Jr vs Jr.)", () => {
@@ -1540,4 +1540,39 @@ test("crowd note: Pinnacle catching up to the books is VERIFY; an old previous p
   await h.run(NOW + 70 * 60e3);
   assert.equal(h.mem.edges.basketball_nba.hits[0].pinMoved, null);
   assert.match(h.pushes.at(-1).body.message, /VERIFY: also \+EV at HR — books may be moving on news/);
+});
+
+test("next scan: earliest sport due on a 5-minute mark; after hours it is the next start hour", async () => {
+  const { nextScanText } = await import("../lib/page.mjs");
+  // NOW = 3:00:00 PM ET, game 2h out -> 15-minute cadence -> next pull at the 3:15 mark
+  const h = harness({}, [edgeGame()]);
+  let s = await h.run(NOW + 15e3); // woke 15s after the mark, like the real scheduler
+  assert.equal(s.nextScan.at, new Date(NOW + 15 * 60e3).toISOString());
+  assert.equal(s.nextScan.sport, "NBA");
+  // a wake-up where nothing is due keeps pointing at the same mark
+  s = await h.run(NOW + 5 * 60e3 + 12e3);
+  assert.match(s.sports.basketball_nba, /not due/);
+  assert.equal(s.nextScan.at, new Date(NOW + 15 * 60e3).toISOString());
+  assert.equal(nextScanText(s.nextScan, NOW + 5 * 60e3 + 12e3), "Next scan in 10m (NBA)");
+  assert.match(renderEdges({ edges: {}, lastRun: h.mem.lastRun, now: NOW + 6 * 60e3 }), /Last scan 1m ago · Next scan in 9m \(NBA\)/);
+  // an error is retried on the next 5-minute mark
+  const h2 = harness({}, [edgeGame()]);
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (u, o) => (/\/odds\?/.test(String(u)) ? new Response("down", { status: 401 }) : inner(u, o));
+  s = await h2.run(NOW + 15e3);
+  assert.equal(s.nextScan.at, new Date(NOW + 5 * 60e3).toISOString());
+  // last pull of the day: the next 15-minute mark is past 10 PM ET -> tomorrow 9 AM ET
+  const day = Date.parse("2026-11-04T05:00:00Z"); // midnight ET
+  const h3 = harness({}, [{ ...edgeGame(), commence_time: new Date(day + 24.5 * 3600e3).toISOString() }]);
+  globalThis.fetch = (() => { const f = globalThis.fetch; return async (u, o) => (/\/events\?/.test(String(u)) ? new Response(JSON.stringify([{ id: "g1", commence_time: new Date(day + 24.5 * 3600e3).toISOString() }])) : f(u, o)); })();
+  s = await h3.run(day + 21.9 * 3600e3); // 9:54 PM ET, game 2.6h out
+  assert.equal(s.nextScan.at, new Date(day + 33 * 3600e3).toISOString(), "9 AM ET next day");
+  assert.equal(s.nextScan.why, "scan hours start");
+  // paused overnight: page shows the start time
+  await h3.run(day + 23 * 3600e3);
+  assert.equal(h3.mem.lastRun.nextScan.at, new Date(day + 33 * 3600e3).toISOString());
+  assert.match(renderEdges({ edges: {}, lastRun: h3.mem.lastRun, now: day + 23 * 3600e3 + 60e3 }), /Next scan 9:00 AM ET · <b>Paused: outside scan hours/);
+  // stale / missing info shows nothing
+  assert.equal(nextScanText({ at: new Date(NOW - 10 * 60e3).toISOString() }, NOW), "");
+  assert.equal(nextScanText(undefined, NOW), "");
 });
