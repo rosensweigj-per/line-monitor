@@ -133,7 +133,7 @@ function harness(envs, games, propEvent = null) {
     pushes.push({ url, body: Object.fromEntries(new URLSearchParams(opts.body)) });
     return new Response("{}");
   };
-  const env = (k) => ({ ODDS_API_KEY: "x", PUSHOVER_TOKEN: "t", PUSHOVER_USER: "u", SPORTS: "basketball_nba", PROP_SPORTS: "off", ...envs })[k];
+  const env = (k) => ({ ODDS_API_KEY: "x", PUSHOVER_TOKEN: "t", PUSHOVER_USER: "u", SPORTS: "basketball_nba", PROP_SPORTS: "off", CONFIRM_ML: "0", ...envs })[k];
   return { mem, pushes, calls, run: (now = NOW, force = false) => runMonitor({ store, env, now, force, log() {} }) };
 }
 const edgeGame = () => game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(110, -130)] } });
@@ -377,6 +377,7 @@ test("settings form round-trips and overrides env vars in a run", async () => {
     ACTIVE_END_HOUR_ET: "23",
     ALERT_TTL_MIN: "10",
     ALERT_MAX_INDIVIDUAL: "5",
+    CONFIRM_ML: "0",
     TIP_INTERVAL_MIN: "5",
     NEAR_INTERVAL_MIN: "15",
     FAR_INTERVAL_MIN: "60",
@@ -1383,4 +1384,39 @@ test("closing CSV: one row per bet, header, missing rows blank closeFair/source,
   const store = { get: async (k) => mem[k] ?? null, setJSON: async (k, v) => { mem[k] = structuredClone(v); } };
   await captureCloses({ store, open: [], getEvents: async () => [], getPinnacle: async () => ({}), now: NOW });
   assert.ok(mem.closing.old, "kept for the season");
+});
+
+test("moneyline confirmation: alert only when the edge holds across two pulls; spreads/props alert at once", async () => {
+  const g = game({ pin: [h2h(-110, -110), spread(3, -110, -110)], books: { fanduel: [h2h(110, -130), spread(3, -130, 108)] } });
+  const games = [g];
+  const h = harness({ CONFIRM_ML: "1" }, games);
+  let s = await h.run();
+  assert.deepEqual(s.newHits.map((x) => x.market), ["spreads"], "spread alerts immediately, ML waits");
+  assert.equal(s.awaitingConfirm, 1);
+  assert.match(renderEdges({ edges: h.mem.edges, now: NOW }), /Waiting for the next scan to confirm/);
+  // a second pull seconds later (Scan now twice) doesn't count
+  s = await h.run(NOW + 60e3, true);
+  assert.equal(s.newHits.length, 0);
+  // next scheduled pull, edge still there -> ML alerts
+  s = await h.run(NOW + 15 * 60e3);
+  assert.deepEqual(s.newHits.map((x) => x.pick), ["Celtics ML"]);
+  assert.equal(s.awaitingConfirm, undefined);
+  assert.equal(h.pushes.length, 2);
+
+  // an edge that vanishes for a pull starts over
+  const h2 = harness({ CONFIRM_ML: "1", NEAR_INTERVAL_MIN: "5" }, games);
+  await h2.run();
+  const saved = g.bookmakers[1].markets;
+  g.bookmakers[1].markets = [h2h(-105, -115)];
+  await h2.run(NOW + 6 * 60e3);
+  g.bookmakers[1].markets = saved;
+  s = await h2.run(NOW + 12 * 60e3);
+  assert.ok(!s.newHits.some((x) => x.market === "h2h"), "seen again after a gap: waits once more");
+  s = await h2.run(NOW + 18 * 60e3);
+  assert.ok(s.newHits.some((x) => x.market === "h2h"));
+
+  // default is ON; settings toggle round-trips
+  assert.equal(currentSettings(() => undefined).confirmMl, true);
+  assert.equal(parseSettingsForm(new URLSearchParams({ confirm_ml: "on" })).CONFIRM_ML, "1");
+  assert.match(renderSettings({ cur: currentSettings(() => undefined), token: "t" }), /name="confirm_ml" checked/);
 });

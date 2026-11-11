@@ -21,6 +21,10 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 - EV at a book = p × decimal odds − 1.
 - Filters: odds −300 to +300; Pinnacle price < 45 min old; no Virginia college teams; best book per selection only.
 - Alert thresholds (current): moneyline 4%, spreads 3%, totals 3%, props 7%.
+- Moneyline confirmation (`CONFIRM_ML`, on by default; Settings → Alerts): a moneyline edge alerts only after it shows
+  up in two pulls in a row for its sport, at least 4 minutes apart. Until then it's on the edges page marked
+  "Waiting for the next scan to confirm". If the edge disappears for a pull, it starts over. Added 11/11 after
+  moneyline alerts showed +6% EV at alert but only +2% CLV (beat the close 9 of 17). Spreads, totals and props alert at once.
 
 ## 3. Better numbers (book has a better spread/total number than Pinnacle, e.g. +3.5 vs Pin +3)
 - Worse numbers are never compared.
