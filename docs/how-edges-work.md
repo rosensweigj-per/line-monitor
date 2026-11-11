@@ -30,6 +30,14 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
   up in two pulls in a row for its sport, at least 4 minutes apart. Until then it's on the edges page marked
   "Waiting for the next scan to confirm". If the edge disappears for a pull, it starts over. Added 11/11 after
   moneyline alerts showed +6% EV at alert but only +2% CLV (beat the close 9 of 17). Spreads, totals and props alert at once.
+- Several books at once (`tagCrowd`, main lines only): if two or more of my books clear the threshold on the same
+  side of a game (moneyline and spread count as one side; totals by Over/Under), the alert and the edges page add
+  "VERIFY: also +EV at HR, BR — books may be moving on news, Pinnacle may be stale". If Pinnacle's own price for that
+  pick changed since the monitor's previous pull, the note instead reads "Also +EV at HR, BR — Pinnacle moved since
+  the last scan, books may be lagging" (Pinnacle leading is the usual real edge). Nothing is suppressed and the
+  stake is unchanged. Added 11/11: in the alert-bet record, main-line bets where 2+ books beat fair went 1–9 with
+  −0.4% CLV, against +3.0% CLV when only one book was out of line (FAMU +8.5 on 11/11: Pinnacle moved a full point
+  toward UMKC within the hour). Props are not tagged (books rarely agree there, and prop CLV is good).
 
 ## 3. Better numbers (book has a better spread/total number than Pinnacle, e.g. +3.5 vs Pin +3)
 - Worse numbers are never compared.

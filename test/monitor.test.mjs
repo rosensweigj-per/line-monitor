@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dec, fairProb, toAmerican, findEdges, findPropEdges, lineOk, formatHit, resolveBooks } from "../lib/scan.mjs";
+import { dec, fairProb, toAmerican, crowdNote, findEdges, findPropEdges, lineOk, formatHit, resolveBooks } from "../lib/scan.mjs";
 import { runMonitor } from "../lib/run.mjs";
 import { renderEdges } from "../lib/page.mjs";
 
@@ -1443,4 +1443,65 @@ test("fairProb: power no-vig for moneylines, multiplicative for everything else"
   const g = game({ pin: [h2h(-265, 225)], books: { fanduel: [h2h(-300, 250)] } });
   assert.equal(findEdges([g], "basketball_ncaab", { now: NOW, minEv: 0.03 }).length, 0);
   assert.ok(mult(225, -265) * dec(250) - 1 > 0.03, "the old method called this +4%");
+});
+
+test("crowd: two or more books +EV on the same side of a game get a VERIFY note (main lines only)", () => {
+  // one book out of line: a normal edge, no note
+  const solo = findEdges([game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(110, -130)], draftkings: [h2h(-108, -112)] } })], "basketball_nba", { now: NOW });
+  assert.equal(solo.length, 1);
+  assert.equal(solo[0].crowd, undefined);
+  assert.equal(crowdNote(solo[0]), "");
+  assert.doesNotMatch(formatHit(solo[0]), /VERIFY/);
+
+  // two books long on the same side: best book kept, tagged with the other one
+  const two = findEdges([game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(110, -130)], hardrockbet: [h2h(108, -128)] } })], "basketball_nba", { now: NOW });
+  assert.equal(two.length, 1);
+  assert.equal(two[0].bookKey, "fanduel");
+  assert.deepEqual(two[0].crowd, ["HR"]);
+  assert.match(formatHit(two[0]), /VERIFY: also \+EV at HR/);
+
+  // moneyline at one book + spread at another, same team: one side, both tagged
+  const cross = findEdges([game({
+    pin: [h2h(-110, -110), spread(3, -110, -110)],
+    books: { betrivers: [h2h(110, -130)], hardrockbet: [spread(3, 106, -126)] },
+  })], "basketball_nba", { now: NOW });
+  assert.equal(cross.length, 2);
+  assert.deepEqual(cross.find((h) => h.market === "h2h").crowd, ["HR"]);
+  assert.deepEqual(cross.find((h) => h.market === "spreads").crowd, ["BR"]);
+
+  // one book off on both markets is still one book: no note
+  const same = findEdges([game({ pin: [h2h(-110, -110), spread(3, -110, -110)], books: { fanduel: [h2h(110, -130), spread(3, 106, -126)] } })], "basketball_nba", { now: NOW });
+  assert.equal(same.length, 2);
+  assert.ok(same.every((h) => h.crowd === undefined));
+
+  // opposite sides at two books are not a crowd
+  const opp = findEdges([game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(110, -130)], draftkings: [h2h(-130, 110)] } })], "basketball_nba", { now: NOW });
+  assert.equal(opp.length, 2);
+  assert.ok(opp.every((h) => h.crowd === undefined));
+});
+
+test("crowd note wording follows who moved: Pinnacle unchanged -> VERIFY, Pinnacle moved -> books lagging", async () => {
+  const mk = (pinHome, pinAway) => game({ pin: [h2h(pinHome, pinAway)], books: { fanduel: [h2h(108, -130)], hardrockbet: [h2h(106, -128)] } });
+  const games = [mk(-110, -110)];
+  const h = harness({ NEAR_INTERVAL_MIN: "5", MIN_EV: "0.03" }, games);
+  let s = await h.run();
+  assert.equal(h.mem.edges.basketball_nba.hits[0].pinMoved, null, "first sight: unknown");
+  assert.match(h.pushes[0].body.message, /VERIFY: also \+EV at HR — books may be moving on news/);
+  // same Pinnacle price next pull, the books improve -> books moved, Pinnacle sat still
+  games[0].bookmakers[1].markets = [h2h(110, -132)];
+  s = await h.run(NOW + 6 * 60e3);
+  assert.equal(h.mem.edges.basketball_nba.hits[0].pinMoved, false);
+  assert.match(h.pushes.at(-1).body.message, /VERIFY: also \+EV at HR/);
+  // Pinnacle moves toward this side, books still stale -> softer note, no VERIFY
+  games[0].bookmakers[0].markets = [h2h(-114, -106)];
+  games[0].bookmakers[1].markets = [h2h(112, -134)];
+  s = await h.run(NOW + 12 * 60e3);
+  const hit = h.mem.edges.basketball_nba.hits[0];
+  assert.equal(hit.pinMoved, true);
+  assert.match(h.pushes.at(-1).body.message, /Also \+EV at HR — Pinnacle moved since the last scan, books may be lagging/);
+  assert.doesNotMatch(h.pushes.at(-1).body.message, /VERIFY/);
+  // edges card: muted style for the lagging note; recent alerts show the note too
+  const html = renderEdges({ edges: h.mem.edges, alerts: h.mem.alerts, now: NOW + 12 * 60e3 });
+  assert.match(html, /<div class="flag event">Also \+EV at HR — Pinnacle moved/);
+  assert.match(html.slice(html.indexOf("Recent alerts")), /Also \+EV at HR|VERIFY: also \+EV at HR/);
 });
