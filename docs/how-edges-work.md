@@ -25,7 +25,7 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
     The closing-line capture (section 9) and Best price page use the same method, so CLV stays comparable.
 - EV at a book = p × decimal odds − 1.
 - Filters: odds −300 to +300; Pinnacle price < 45 min old; no Virginia college teams; best book per selection only.
-- Alert thresholds (current): moneyline 6% (raised from 4% on 11/11), spreads 3%, totals 3%, props 5%.
+- Alert thresholds (current): moneyline 5% (4% until 11/11; set to 5% once the power no-vig went live), spreads 3%, totals 3%, props 5%.
 - Moneyline confirmation (`CONFIRM_ML`, on by default; Settings → Alerts): a moneyline edge alerts only after it shows
   up in two pulls in a row for its sport, at least 4 minutes apart. Until then it's on the edges page marked
   "Waiting for the next scan to confirm". If the edge disappears for a pull, it starts over. Added 11/11 after
