@@ -24,9 +24,9 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
     alert-bet review: 8 of 11 moneyline bets at +200 or longer fell under 3% EV once re-priced this way.
     The closing-line capture (section 9) and Best price page use the same method, so CLV stays comparable.
 - EV at a book = p × decimal odds − 1.
-- Filters: odds −300 to the longest-odds cap (`MAX_ODDS`, default +300, set in Settings → Alerts; applies to main
+- Filters: odds −300 to the longest-odds cap (`MAX_ODDS`, default +300, currently +200, set in Settings → Alerts; applies to main
   lines and props); Pinnacle price < 45 min old; no Virginia college teams; best book per selection only.
-- Extra EV by sport (`EV_BUMP_<sport key>`, Settings → Alerts, default 0): added to every threshold for that sport,
+- Extra EV by sport (`EV_BUMP_<sport key>`, Settings → Alerts, default 0; currently NCAAB +2%, NCAAF +3%): added to every threshold for that sport,
   e.g. +2% on NCAAB makes a 5% moneyline threshold 7% there. Added 11/11 after college alerts showed weak CLV
   (NCAAB +2.7%, NCAAF +0.3%, vs NBA +6.2%) and bets at +200 or longer beat the close only 6 of 13 times.
 - Alert thresholds (current): moneyline 5% (4% until 11/11; set to 5% once the power no-vig went live), spreads 3%, totals 3%, props 5%.
@@ -68,7 +68,7 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 - Checked hourly per game, starting 4h before tip (current). /status reports how many games Pinnacle actually priced.
 
 ## 5. Schedule (current)
-- Scans 9 AM–6 PM ET. Each sport: every 15 min within 4h of a game (including the last hour; can be set as low
+- Scans 9 AM–10 PM ET (extended from 6 PM on 11/11 to cover evening NBA props). Each sport: every 15 min within 4h of a game (including the last hour; can be set as low
   as 5 min), else hourly.
 - "Scan now" in the app ignores hours and intervals.
 
