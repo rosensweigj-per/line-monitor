@@ -89,7 +89,8 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 ## 7a. App pages (all need ?token=)
 - `/edges`: open edges (greyed after 15 min, folded away after an hour), Recent alerts until game start, Scan now.
   The status line shows the last scan, the next scan ("Next scan in 11m (NBA)", or the start time when paused) and
-  credits left. "Closest this hour" shows the best EV per market even below the thresholds; tap it to expand full
+  credits left. A "Today" line counts the day's scans (ET), distinct edges found and alerts sent, and the best
+  EV seen per market even below the thresholds (kept 14 days; also in /status as `today`). "Closest this hour" shows the best EV per market even below the thresholds; tap it to expand full
   rows with the pick, book, fair price, game and a Check price link.
 - `/check`: live re-price of one bet. `/best`: every book's price for a team. `/settings`: all the settings above.
 

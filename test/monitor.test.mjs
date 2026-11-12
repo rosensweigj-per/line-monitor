@@ -1625,3 +1625,39 @@ test("longest-odds cap and per-sport extra EV (settings + scan + check threshold
   assert.match(html, /name="bump_basketball_ncaab"[^>]*value="2"/);
   assert.match(html, /· max \+200 · NCAAF \+3%, NCAAB \+2%/);
 });
+
+test("daily tally: scans, pulls, distinct edges, alerts and best EV per market for the ET day", async () => {
+  const { todayText } = await import("../lib/page.mjs");
+  const quiet = game({ pin: [h2h(-110, -110), spread(3, -110, -110)], books: { fanduel: [h2h(102, -130), spread(3, -110, -110)] } });
+  const h = harness({ NEAR_INTERVAL_MIN: "5" }, [quiet]);
+  await h.run();
+  let t = h.mem.daily["2026-11-04"];
+  assert.equal(t.scans, 1);
+  assert.equal(t.pulls, 1);
+  assert.equal(t.edgeKeys.length, 0);
+  assert.equal(t.alerts, 0);
+  assert.ok(Math.abs(t.best.h2h.ev - 0.01) < 1e-9, "best ML +1.0% even though nothing alerted");
+  // an edge appears on the next pull: counted once, alert counted, best ML raised
+  h.mem.edges = {}; // irrelevant to the tally
+  const games2 = [edgeGame()];
+  const h2 = harness({ NEAR_INTERVAL_MIN: "5" }, games2);
+  h2.mem.daily = h.mem.daily;
+  await h2.run(NOW + 6 * 60e3);
+  await h2.run(NOW + 12 * 60e3); // same edge again, no re-alert
+  t = h2.mem.daily["2026-11-04"];
+  assert.equal(t.scans, 3);
+  assert.equal(t.edgeKeys.length, 1);
+  assert.equal(t.alerts, 1);
+  assert.ok(Math.abs(t.best.h2h.ev - 0.05) < 1e-9);
+  assert.match(todayText(t), /^Today: 3 scans · 1 edge · 1 alert · best <span[^>]*>ML \+5\.0%<\/span> · <span[^>]*>Spread -4\.5%<\/span>$/);
+  assert.match(renderEdges({ edges: {}, today: t, now: NOW }), /<div class="status today">Today: 3 scans/);
+  // a new ET day starts fresh; only 14 days kept
+  for (let i = 1; i <= 20; i++) h2.mem.daily[`2026-10-${String(i).padStart(2, "0")}`] = { scans: 1, pulls: 0, edgeKeys: [], alerts: 0, best: {} };
+  await h2.run(NOW + 24 * 3600e3);
+  assert.equal(h2.mem.daily["2026-11-05"].scans, 1);
+  assert.equal(Object.keys(h2.mem.daily).length, 14);
+  // paused wake-ups don't count as scans
+  const night = Date.parse("2026-11-04T05:00:00Z") + 23 * 3600e3;
+  await h2.run(night);
+  assert.equal(h2.mem.daily["2026-11-04"].scans, 3);
+});
