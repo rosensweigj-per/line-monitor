@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dec, fairProb, toAmerican, crowdNote, findEdges, findPropEdges, lineOk, formatHit, resolveBooks, pinMove } from "../lib/scan.mjs";
+import { dec, fairProb, toAmerican, crowdNote, findEdges, findPropEdges, lineOk, formatHit, resolveBooks, pinMove, shortBook, BOOKMAKERS } from "../lib/scan.mjs";
 import { runMonitor } from "../lib/run.mjs";
 import { renderEdges } from "../lib/page.mjs";
 
@@ -47,10 +47,13 @@ test("devig + EV on a moneyline", () => {
   assert.equal(hits[0].betterLine, false);
 });
 
-test("below threshold, out of odds range, started games, stale Pin, MGM are skipped", () => {
+test("below threshold, out of odds range, started games, stale Pin are skipped; BetMGM is a scanned book", () => {
   const g = (books, extra) => game({ pin: [h2h(-110, -110)], books }, extra);
   assert.equal(findEdges([g({ fanduel: [h2h(102, -130)] })], "basketball_nba", { now: NOW }).length, 0); // EV 1%
-  assert.equal(findEdges([g({ betmgm: [h2h(120, -140)] })], "basketball_nba", { now: NOW }).length, 0); // reference only
+  const mgm = findEdges([g({ betmgm: [h2h(120, -140)] })], "basketball_nba", { now: NOW });
+  assert.equal(mgm.length, 1);
+  assert.equal(mgm[0].book, "BetMGM");
+  assert.equal(shortBook(mgm[0]), "MGM");
   assert.equal(findEdges([g({ fanduel: [h2h(120, -140)] }, { commence_time: new Date(NOW - 1).toISOString() })], "basketball_nba", { now: NOW }).length, 0);
   const stale = g({ fanduel: [h2h(120, -140)] });
   stale.bookmakers[0].last_update = new Date(NOW - 60 * 60e3).toISOString();
@@ -350,7 +353,7 @@ import { renderSettings } from "../lib/page.mjs";
 
 test("settings form round-trips and overrides env vars in a run", async () => {
   const form = new URLSearchParams();
-  for (const k of ["draftkings", "fanduel", "espnbet", "betrivers", "williamhill_us", "hardrockbet"]) form.set(`book_${k}`, "on");
+  for (const k of ["draftkings", "fanduel", "espnbet", "betrivers", "williamhill_us", "hardrockbet", "betmgm"]) form.set(`book_${k}`, "on");
   form.set("sport_basketball_nba", "on");
   form.set("sport_icehockey_nhl", "on");
   form.set("props_basketball_nba", "on");
@@ -416,7 +419,7 @@ test("settings form guards bad input", () => {
   assert.equal(s.ACTIVE_END_HOUR_ET, "21");
   assert.equal(s.SPORTS, "off");
   assert.equal(s.PROP_SPORTS, "off");
-  assert.equal(s.BOOKS_OFF, "draftkings,fanduel,espnbet,betrivers,williamhill_us,fanatics,hardrockbet");
+  assert.equal(s.BOOKS_OFF, "draftkings,fanduel,espnbet,betrivers,williamhill_us,fanatics,hardrockbet,betmgm");
 });
 
 test("NFL props: own markets per sport, defaults when none picked", async () => {
@@ -686,7 +689,7 @@ test("settings page is grouped into collapsible sections with summaries; field n
   const cur = currentSettings(withSettings((k) => ({ BOOKS_OFF: "fanatics", BOOK_SHORTCUTS: "betrivers" })[k], {}));
   const html = renderSettings({ cur, token: "t" });
   assert.equal((html.match(/<details>/g) || []).length, 4);
-  assert.match(html, /<span class="st">Books<\/span><span class="sum">6 of 7 on · 1 via Shortcut/);
+  assert.match(html, /<span class="st">Books<\/span><span class="sum">7 of 8 on · 1 via Shortcut/);
   assert.match(html, /<span class="sum">ML 3% · Spr 3% · Tot 3% · Props 4%/);
   assert.match(html, /9 AM–10 PM ET · 5\/15\/60 min · props 60 min/);
   for (const name of ["book_fanatics", "sc_betrivers", "sport_basketball_nba", "props_americanfootball_nfl", "prop_player_points",
@@ -955,14 +958,15 @@ test("best price: team search, book comparison with EV vs Pinnacle, render", () 
   };
   const cmp = compareBooks(ev, "Michigan State Spartans", { skipBooks: new Set(["fanatics"]) });
   const ml = cmp.h2h[0];
-  assert.deepEqual(ml.rows.map((r) => r.book), ["FD", "DK"], "best first; off books and MGM excluded");
-  assert.ok(Math.abs(ml.rows[0].ev - 0.025) < 1e-9);
+  assert.deepEqual(ml.rows.map((r) => r.book), ["BetMGM", "FD", "DK"], "best first; off books excluded");
+  assert.ok(Math.abs(ml.rows[1].ev - 0.025) < 1e-9);
   assert.equal(ml.fair.american, -100);
   const sp = cmp.spreads[0];
   assert.deepEqual(sp.rows.map((r) => [r.book, r.point, r.ev == null ? null : +r.ev.toFixed(4), r.floor]), [["DK", -2.5, -0.0652, true], ["FD", -3.5, null, false]]);
   const html = renderBest({ q: "mich st", games: [{ sport: "basketball_ncaab", event: ev, team: "Michigan State Spartans", cmp }], token: "t", now: NOW });
   assert.match(html, /NCAAB · Oakland Golden Grizzlies @ Michigan State Spartans/);
-  assert.match(html, /<div class="brow best"><span><a href="https:\/\/sportsbook\.fanduel\.com"[^>]*>FD<\/a><\/span><span><b>\+105<\/b><\/span><span class="pos">2\.5%<\/span>/);
+  assert.match(html, /<div class="brow best"><span><a href="https:\/\/sports\.va\.betmgm\.com[^"]*"[^>]*>BetMGM<\/a><\/span><span><b>\+150<\/b><\/span>/);
+  assert.match(html, /<div class="brow"><span><a href="https:\/\/sportsbook\.fanduel\.com"[^>]*>FD<\/a><\/span><span><b>\+105<\/b><\/span><span class="pos">2\.5%<\/span>/);
   assert.match(html, /fair -100 \(Pin -110\)/);
   assert.match(renderBest({ q: "zzz", games: [], token: "t" }), /No upcoming game found/);
 });
@@ -1660,4 +1664,16 @@ test("daily tally: scans, pulls, distinct edges, alerts and best EV per market f
   const night = Date.parse("2026-11-04T05:00:00Z") + 23 * 3600e3;
   await h2.run(night);
   assert.equal(h2.mem.daily["2026-11-04"].scans, 3);
+});
+
+test("BetMGM: in the bookmaker list once (still one cost region), matched from the tracker, can be turned off", async () => {
+  const { bookKeyFromName } = await import("../lib/bets.mjs");
+  const list = BOOKMAKERS.split(",");
+  assert.equal(list.filter((b) => b === "betmgm").length, 1);
+  assert.ok(list.length <= 10, "<= 10 bookmakers costs the same as one region");
+  assert.equal(bookKeyFromName("BetMGM"), "betmgm");
+  assert.deepEqual([...resolveBooks("mgm, BetMGM")], ["betmgm"]);
+  const g = game({ pin: [h2h(-110, -110)], books: { betmgm: [h2h(112, -135)], fanduel: [h2h(106, -128)] } });
+  assert.equal((await harness({}, [g]).run()).newHits[0].book, "BetMGM");
+  assert.equal((await harness({ BOOKS_OFF: "betmgm" }, [g]).run()).newHits[0].book, "FD");
 });

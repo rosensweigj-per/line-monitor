@@ -8,8 +8,9 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 
 ## 1. Data
 - Odds source: The Odds API (20K credits/month). Monitor pauses below 3,000 remaining.
-- Sharp reference: Pinnacle. BetMGM is pulled for reference only (no account).
-- Books scanned (current): DraftKings, FanDuel, theScore, BetRivers, Caesars, Hard Rock. Fanatics is OFF.
+- Sharp reference: Pinnacle.
+- Books scanned (current): DraftKings, FanDuel, theScore, BetRivers, Caesars, Hard Rock, BetMGM (added 11/13).
+  Fanatics is OFF.
 - Sports: NFL, NCAAF, NBA, NCAAB, NHL (MLB optional). Games starting within 36h, pre-game only.
 - Markets: moneyline (h2h), spreads, totals; player props (over/unders):
   - NBA: points, rebounds, assists
@@ -81,7 +82,7 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 ## 7. Alerts (Pushover)
 - One alert per edge (top 5 per scan; the rest in one "+N more" summary). Alerts auto-expire after 10 min.
 - Format: "Kentucky ML +200 @ BR / fair +187 (Pin +178) · EV +4.6% · Grade B · stake $5 / NCAAB · game · time".
-  Short book names: DK, FD, TS (theScore), BR, CZR, FAN, HR.
+  Short book names: DK, FD, TS (theScore), BR, CZR, FAN, HR, MGM.
 - Each alert links to a Check price page that re-prices that one bet live (~1 credit): price, fair price, EV and
   stake, alert vs now, with a verdict: Still +EV / Thin / Gone.
 - Re-alerts only when the price improves or after 6h.
