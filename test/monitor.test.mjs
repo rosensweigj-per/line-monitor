@@ -1677,3 +1677,12 @@ test("BetMGM: in the bookmaker list once (still one cost region), matched from t
   assert.equal((await harness({}, [g]).run()).newHits[0].book, "BetMGM");
   assert.equal((await harness({ BOOKS_OFF: "betmgm" }, [g]).run()).newHits[0].book, "FD");
 });
+
+test("edges page: phone bottom bar carries Best $, Settings and Scan now", () => {
+  const html = renderEdges({ edges: {}, now: NOW, token: "t" });
+  const bar = html.slice(html.indexOf('<nav class="bottombar"'), html.indexOf("</nav>"));
+  assert.match(bar, /href="\/best\?token=t">Best \$/);
+  assert.match(bar, /href="\/settings\?token=t">Settings/);
+  assert.match(bar, /<form method="post" action="\/edges\?token=t"[^>]*>\s*<button type="submit">Scan now<\/button>/);
+  assert.match(html, /@media \(max-width:700px\)\{\s*header \.actions\{display:none !important\}/);
+});
