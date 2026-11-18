@@ -1761,7 +1761,7 @@ test("shadow: first sighting logged once, closes 10 min before start (one call p
   assert.equal(gradeMain({ market: "spreads", side: "Knicks", point: 3 }, { completed: true, scores: [{ name: "Celtics", score: "101" }, { name: "Knicks", score: "98" }] }), "push");
   assert.equal(gradeMain({ market: "totals", side: "Under", point: 199.5 }, { completed: true, scores: [{ name: "Celtics", score: "101" }, { name: "Knicks", score: "99" }] }), "loss");
   assert.equal(gradeMain({ market: "h2h", side: "Celtics" }, { completed: false, scores: null }), null);
-  shadow.prop = { method: "pinnacle", at: new Date(NOW).toISOString(), market: "player_points", sportKey: "basketball_nba", eventId: "c1", start: START, odds: 110, ev: 0.05 };
+  shadow.prop = { method: "pinnacle", v: 2, at: new Date(NOW).toISOString(), market: "player_points", sportKey: "basketball_nba", eventId: "c1", start: START, odds: 110, ev: 0.05 };
   const scoreCalls = [];
   const getScores = async (s) => { scoreCalls.push(s); return { json: [{ id: "c1", completed: true, scores: [{ name: "Celtics", score: "101" }, { name: "Knicks", score: "99" }] }], headers: new Headers({ "x-requests-last": "2" }) }; };
   assert.equal(await settleShadow(shadow, { getScores, now: Date.parse(START) + 4 * 3600e3, budget, cap: 200 }), 2);
@@ -1847,4 +1847,31 @@ test("notes show on alerts and edge cards; never change EV/stake; a broken link 
   const s2 = await h2.run();
   assert.equal(h2.pushes.length, 1);
   assert.match(s2.notes.error, /publish/);
+});
+
+test("paper test v2: both methods on the same raw bar, both scored against both closes, v2-only summary", async () => {
+  const { shadowStart, SHADOW_RULES } = await import("../lib/shadow.mjs");
+  // A 3.5% NCAAB moneyline edge at FD vs Pinnacle and vs consensus: below Jason's alert bar (4% + 2% NCAAB) and
+  // unconfirmed, but both methods must log it in the paper test.
+  const g = { ...consGame(107), id: "c2" };
+  const h = harness({ SPORTS: "basketball_ncaab", MIN_EV_ML: "0.04", EV_BUMP_basketball_ncaab: "0.02", CONFIRM_ML: "1" }, [g]);
+  const s = await h.run();
+  assert.equal(s.newHits.length, 0, "no real alert");
+  const rows = Object.values(h.mem.shadow);
+  assert.deepEqual(rows.map((e) => e.method).sort(), ["consensus", "pinnacle"]);
+  assert.ok(rows.every((e) => e.v === SHADOW_RULES && e.bookKey === "fanduel" && e.market === "h2h"));
+  // both closes recorded for BOTH methods' rows (the close pull returns the same game, all books)
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (u, o) => (/\/events\/c2\/odds/.test(String(u)) ? new Response(JSON.stringify(g), { headers: { "x-requests-last": "1" } }) : inner(u, o));
+  await h.run(Date.parse(START) - 8 * 60e3);
+  for (const e of Object.values(h.mem.shadow)) {
+    assert.ok(e.consClose != null && e.pinClose != null, `${e.method} row has both closes`);
+  }
+  // pre-fix rows stay in the log but are left out of the default comparison
+  h.mem.shadow.old = { method: "consensus", at: new Date(NOW - 3600e3).toISOString(), market: "h2h", ev: 0.05, odds: 120 };
+  const v2 = summarizeShadow(h.mem.shadow);
+  assert.equal(v2.reduce((n, r) => n + r.bets, 0), 2);
+  assert.equal(summarizeShadow(h.mem.shadow, { rules: null }).reduce((n, r) => n + r.bets, 0), 3);
+  assert.equal(shadowStart(h.mem.shadow), new Date(NOW).toISOString());
+  assert.match(renderShadow({ summary: v2, recent: [], token: "t", startedAt: shadowStart(h.mem.shadow) }), /same rules since Nov 4, 3:00 PM ET/);
 });

@@ -138,7 +138,12 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
   price seen. ~10 min before start, one all-books pull per game records the consensus close and the Pinnacle close.
   Main lines are settled from final scores (Odds API scores, daysFrom=3, every 3h). Props can't be settled
   automatically (no stats feed), so they're judged on CLV. Flat 1 unit per edge.
-- Never alerts or changes stakes. Own credit cap `SHADOW_DAILY_CAP` (200/day). `SHADOW=0` turns it off.
+- Same rules for both methods (rules v2, from the 11/18 fix): flat 3% (`CONS_MIN_EV`), same odds window, every
+  enabled book, no two-scan moneyline confirmation, no sport extras; better numbers at their floor EV. The Pinnacle
+  side is logged from the all-books pull, independent of the real alert settings. Every edge, whichever method
+  found it, is scored against BOTH the consensus close and the Pinnacle close. Rows logged before the fix are kept
+  but left out of the comparison (`/shadow?…&all=1` shows them).
+- Never alerts or changes stakes. Own credit cap `SHADOW_DAILY_CAP` (400/day). `SHADOW=0` turns it off.
 - Results: `/shadow?token=…` (table per method: edges, avg EV, CLV vs each close and beat counts, record, units,
   ROI; latest edges), `&format=csv` or `&format=json`, `&since=YYYY-MM-DD`.
 
