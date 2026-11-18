@@ -1,16 +1,16 @@
 # Line Monitor — how edges are identified
 
-_Last updated 11/11/2026. Settings marked "current" are editable in the app's Settings page; values here are as of
+_Last updated 11/18/2026. Settings marked "current" are editable in the app's Settings page; values here are as of
 this date._
 
 Alerts-only system (Netlify scheduled function + The Odds API). It never places bets or touches money.
 It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts; it never writes to the sheet.
 
 ## 1. Data
-- Odds source: The Odds API (20K credits/month). Monitor pauses below 3,000 remaining.
+- Odds source: The Odds API (100K credits/month since 11/18; was 20K). Monitor pauses below 3,000 remaining.
 - Sharp reference: Pinnacle.
-- Books scanned (current): DraftKings, FanDuel, theScore, BetRivers, Caesars, Hard Rock, BetMGM (added 11/13).
-  Fanatics is OFF.
+- Books (current): ON DraftKings, FanDuel, theScore, Caesars, Hard Rock; OFF BetRivers, Fanatics, BetMGM.
+  (All are still pulled and used for the consensus price in the paper test.)
 - Sports: NFL, NCAAF, NBA, NCAAB, NHL (MLB optional). Games starting within 36h, pre-game only.
 - Markets: moneyline (h2h), spreads, totals; player props (over/unders):
   - NBA: points, rebounds, assists
@@ -25,12 +25,12 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
     alert-bet review: 8 of 11 moneyline bets at +200 or longer fell under 3% EV once re-priced this way.
     The closing-line capture (section 9) and Best price page use the same method, so CLV stays comparable.
 - EV at a book = p × decimal odds − 1.
-- Filters: odds −300 to the longest-odds cap (`MAX_ODDS`, default +300, currently +200, set in Settings → Alerts; applies to main
+- Filters: odds −300 to the longest-odds cap (`MAX_ODDS`, default +300, currently +250, set in Settings → Alerts; applies to main
   lines and props); Pinnacle price < 45 min old; no Virginia college teams; best book per selection only.
-- Extra EV by sport (`EV_BUMP_<sport key>`, Settings → Alerts, default 0; currently NCAAB +2%, NCAAF +3%): added to every threshold for that sport,
+- Extra EV by sport (`EV_BUMP_<sport key>`, Settings → Alerts, default 0; currently NCAAB +2%, NCAAF +2%): added to every threshold for that sport,
   e.g. +2% on NCAAB makes a 5% moneyline threshold 7% there. Added 11/11 after college alerts showed weak CLV
   (NCAAB +2.7%, NCAAF +0.3%, vs NBA +6.2%) and bets at +200 or longer beat the close only 6 of 13 times.
-- Alert thresholds (current): moneyline 5% (4% until 11/11; set to 5% once the power no-vig went live), spreads 3%, totals 3%, props 5%.
+- Alert thresholds (current): moneyline 4%, spreads 4%, totals 4%, props 5%.
 - Moneyline confirmation (`CONFIRM_ML`, on by default; Settings → Alerts): a moneyline edge alerts only after it shows
   up in two pulls in a row for its sport, at least 4 minutes apart. Until then it's on the edges page marked
   "Waiting for the next scan to confirm". If the edge disappears for a pull, it starts over. Added 11/11 after
@@ -66,11 +66,12 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 ## 4. Props
 - Same no-vig method per player line (Over/Under pairs from Pinnacle). A lower Over or higher Under than
   Pinnacle's counts as a better number (floor EV).
-- Checked hourly per game, starting 4h before tip (current). /status reports how many games Pinnacle actually priced.
+- Checked every 30 min per game, starting 4h before tip (current). NBA: points, rebounds, assists, threes;
+  NFL: all seven prop types. /status reports how many games Pinnacle actually priced.
 
 ## 5. Schedule (current)
-- Scans 9 AM–10 PM ET (extended from 6 PM on 11/11 to cover evening NBA props). Each sport: every 15 min within 4h of a game (including the last hour; can be set as low
-  as 5 min), else hourly.
+- Scans 9 AM–10 PM ET. Each sport: every 5 min within 1h of a game, 10 min within 4h, else every 30 min
+  (current, set 11/18 with the 100K plan). Better-number checks capped at 300 credits/day.
 - "Scan now" in the app ignores hours and intervals.
 
 ## 6. Stake and grade (by EV; better-number floors size off the floor)
