@@ -120,6 +120,20 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 - Bets without a gameKey get no close. Capped at 60 credits/day (`CLOSE_DAILY_CAP`), typically 1–3 per game.
 - Kept for the whole season, append-only: a captured game is never changed or deleted.
 
-## 10. Monitor fields useful for matching
+## 10. Paper test: Pinnacle method vs consensus method (started 11/18)
+- Why: through 11/17, alert bets were 35-62 (−$224) despite +4.9% average CLV vs Pinnacle. Props looked best on
+  CLV but lost money, which suggests Pinnacle's prop prices (low limits) are too soft to anchor on.
+- Consensus method (lib/consensus.mjs): fair chance = no-vig average of every OTHER bookmaker in the pull at the exact
+  same number (my books, BetMGM, Pinnacle counted twice); the priced book is left out. Needs 3+ other books. Edge =
+  price beats consensus by `CONS_MIN_EV` (3%). Same odds window and book on/off rules. Main lines and props.
+- Shadow log (lib/shadow.mjs, blob "shadow", 60 days): every edge either method finds is logged once at the first
+  price seen. ~10 min before start, one all-books pull per game records the consensus close and the Pinnacle close.
+  Main lines are settled from final scores (Odds API scores, daysFrom=3, every 3h). Props can't be settled
+  automatically (no stats feed), so they're judged on CLV. Flat 1 unit per edge.
+- Never alerts or changes stakes. Own credit cap `SHADOW_DAILY_CAP` (200/day). `SHADOW=0` turns it off.
+- Results: `/shadow?token=…` (table per method: edges, avg EV, CLV vs each close and beat counts, record, units,
+  ROI; latest edges), `&format=csv` or `&format=json`, `&since=YYYY-MM-DD`.
+
+## 11. Monitor fields useful for matching
 sport, game ("Away @ Home"), start (ISO), market, pick, book, bookKey, odds, point, pinPoint, betterLine,
 fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model), check (bool), eventId (Odds API).

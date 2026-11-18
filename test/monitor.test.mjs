@@ -1686,3 +1686,114 @@ test("edges page: phone bottom bar carries Best $, Settings and Scan now", () =>
   assert.match(bar, /<form method="post" action="\/edges\?token=t"[^>]*>\s*<button type="submit">Scan now<\/button>/);
   assert.match(html, /@media \(max-width:700px\)\{\s*header \.actions\{display:none !important\}/);
 });
+
+// --- paper test: consensus method vs Pinnacle method ---
+import { consensusProb, consensusEdges } from "../lib/consensus.mjs";
+import { logShadow, closeShadow, gradeMain, settleShadow, summarizeShadow } from "../lib/shadow.mjs";
+import { renderShadow } from "../lib/page.mjs";
+
+const consGame = (fdHome = 120, extra = {}) => ({
+  id: "c1", commence_time: START, home_team: "Celtics", away_team: "Knicks", ...extra,
+  bookmakers: [
+    { key: "pinnacle", last_update: fresh, markets: [h2h(-110, -110), spread(3, -110, -110)] },
+    { key: "draftkings", markets: [h2h(-112, -108), spread(3, -110, -110)] },
+    { key: "betmgm", markets: [h2h(-108, -112), spread(3, -112, -108)] },
+    { key: "williamhill_us", markets: [h2h(-110, -110), spread(3, -110, -110)] },
+    { key: "fanduel", markets: [h2h(fdHome, -145), spread(3, -110, -110)] },
+  ],
+});
+
+test("consensusProb: average of the OTHER books at the exact number, Pinnacle double, needs 3 others", () => {
+  const g = consGame();
+  const c = consensusProb(g.bookmakers, "h2h", { name: "Celtics" }, "fanduel");
+  assert.equal(c.n, 4);
+  const expect = (2 * fairProb(-110, -110, "h2h") + fairProb(-112, -108, "h2h") + fairProb(-108, -112, "h2h") + fairProb(-110, -110, "h2h")) / 5;
+  assert.ok(Math.abs(c.p - expect) < 1e-12);
+  assert.ok(!c.books.includes("fanduel"), "the priced book is left out");
+  // spreads pair with the other team at the negative number
+  assert.equal(consensusProb(g.bookmakers, "spreads", { name: "Knicks", point: 3 }, "fanduel").n, 4);
+  assert.equal(consensusProb(g.bookmakers, "spreads", { name: "Knicks", point: 3.5 }, "fanduel"), null, "nobody at +3.5");
+  // fewer than 3 other books -> null
+  assert.equal(consensusProb(g.bookmakers.slice(0, 3), "h2h", { name: "Celtics" }, "betmgm"), null);
+  // props: same player, other half of the same line
+  const pe = propEvent();
+  pe.bookmakers.push({ key: "betmgm", markets: [{ key: "player_points", outcomes: prop("Jayson Tatum", 27.5, -112, -108) }] });
+  pe.bookmakers.push({ key: "williamhill_us", markets: [{ key: "player_points", outcomes: prop("Jayson Tatum", 27.5, -108, -112) }] });
+  assert.equal(consensusProb(pe.bookmakers, "player_points", { name: "Over", point: 27.5, description: "Jayson Tatum" }, "fanduel").n, 3);
+});
+
+test("consensusEdges: one book off the pack is an edge; in-line books, thin markets, off books and long odds aren't", () => {
+  let e = consensusEdges([consGame(120)], "basketball_nba", { now: NOW });
+  assert.deepEqual(e.map((x) => `${x.book} ${x.side} ${x.market} ${x.odds}`), ["FD Celtics h2h 120"]);
+  assert.equal(e[0].consBooks, 4);
+  assert.ok(e[0].consEv > 0.03);
+  assert.equal(consensusEdges([consGame(102)], "basketball_nba", { now: NOW }).length, 0, "+102 is only ~1% over consensus");
+  assert.equal(consensusEdges([consGame(120)], "basketball_nba", { now: NOW, skipBooks: new Set(["fanduel"]) }).length, 0);
+  assert.equal(consensusEdges([consGame(120)], "basketball_nba", { now: NOW, maxOdds: 110 }).length, 0);
+  assert.equal(consensusEdges([consGame(120, { commence_time: new Date(NOW - 1).toISOString() })], "basketball_nba", { now: NOW }).length, 0);
+});
+
+test("shadow: first sighting logged once, closes 10 min before start (one call per game), main lines settled from scores", async () => {
+  const shadow = {};
+  const cons = consensusEdges([consGame(120)], "basketball_nba", { now: NOW });
+  const pin = findEdges([consGame(120)], "basketball_nba", { now: NOW });
+  assert.equal(logShadow(shadow, "consensus", cons, NOW), 1);
+  assert.equal(logShadow(shadow, "pinnacle", pin, NOW), 1);
+  assert.equal(logShadow(shadow, "consensus", cons, NOW + 60e3), 0, "second sighting not re-logged");
+  assert.equal(Object.values(shadow).find((e) => e.method === "consensus").seen, 2);
+
+  // close: FD still +120, the pack moved toward Celtics (Celtics now ~ -125)
+  const calls = [];
+  const closeEv = { ...consGame(120), bookmakers: consGame(120).bookmakers.map((b) => b.key === "fanduel" ? b : { ...b, markets: [h2h(-125, 105), spread(3, -110, -110)] }) };
+  const budget = { used: 0 };
+  const getEvent = async (q) => { calls.push(q); return { json: closeEv, headers: new Headers({ "x-requests-last": "1" }) }; };
+  assert.equal(await closeShadow(shadow, { getEvent, now: NOW, budget, cap: 200 }), 0, "2h out: not due");
+  const closedN = await closeShadow(shadow, { getEvent, now: Date.parse(START) - 8 * 60e3, budget, cap: 200 });
+  assert.equal(closedN, 2);
+  assert.equal(calls.length, 1, "one call for the game");
+  assert.deepEqual(calls[0], { sport: "basketball_nba", eventId: "c1", markets: "h2h" });
+  const ce = Object.values(shadow).find((e) => e.method === "consensus");
+  assert.ok(ce.consClv > 0.1 && ce.pinClv > 0.1, "price beat both closes");
+  assert.equal(ce.pinClose, toAmerican(fairProb(-125, 105, "h2h")));
+
+  // settle from final scores; props stay open
+  assert.equal(gradeMain({ market: "h2h", side: "Celtics" }, { completed: true, scores: [{ name: "Celtics", score: "101" }, { name: "Knicks", score: "99" }] }), "win");
+  assert.equal(gradeMain({ market: "spreads", side: "Knicks", point: 3 }, { completed: true, scores: [{ name: "Celtics", score: "101" }, { name: "Knicks", score: "98" }] }), "push");
+  assert.equal(gradeMain({ market: "totals", side: "Under", point: 199.5 }, { completed: true, scores: [{ name: "Celtics", score: "101" }, { name: "Knicks", score: "99" }] }), "loss");
+  assert.equal(gradeMain({ market: "h2h", side: "Celtics" }, { completed: false, scores: null }), null);
+  shadow.prop = { method: "pinnacle", at: new Date(NOW).toISOString(), market: "player_points", sportKey: "basketball_nba", eventId: "c1", start: START, odds: 110, ev: 0.05 };
+  const scoreCalls = [];
+  const getScores = async (s) => { scoreCalls.push(s); return { json: [{ id: "c1", completed: true, scores: [{ name: "Celtics", score: "101" }, { name: "Knicks", score: "99" }] }], headers: new Headers({ "x-requests-last": "2" }) }; };
+  assert.equal(await settleShadow(shadow, { getScores, now: Date.parse(START) + 4 * 3600e3, budget, cap: 200 }), 2);
+  assert.deepEqual(scoreCalls, ["basketball_nba"]);
+  assert.equal(ce.result, "win");
+  assert.ok(Math.abs(ce.units - 1.2) < 1e-9);
+  assert.equal(shadow.prop.result, undefined);
+  assert.equal(budget.used, 3);
+
+  const sum = summarizeShadow(shadow);
+  const c = sum.find((s) => s.method === "consensus" && s.group === "main lines");
+  assert.equal(c.bets, 1); assert.equal(c.record, "1-0"); assert.equal(c.consBeat, 1);
+  assert.ok(sum.some((s) => s.method === "pinnacle" && s.group === "props"));
+  const html = renderShadow({ summary: sum, recent: Object.values(shadow), token: "t", now: NOW });
+  assert.match(html, /<td><b>Consensus<\/b><\/td><td>main lines<\/td><td>1<\/td>/);
+  assert.match(html, /close: cons [-+]\d+ \(\+\d+\.\d%\), Pin [-+]\d+/);
+  assert.match(html, /<td>props<\/td>[\s\S]*?<small>n\/a<\/small>/);
+});
+
+test("shadow in a run: both methods logged, consensus never alerts, SHADOW=0 turns it off, cap respected", async () => {
+  const h = harness({ CONFIRM_ML: "0" }, [consGame(120)]);
+  const s = await h.run();
+  const methods = Object.values(h.mem.shadow).map((e) => e.method).sort();
+  assert.deepEqual(methods, ["consensus", "pinnacle"]);
+  assert.equal(h.pushes.length, 1, "only the Pinnacle-method alert is pushed");
+  assert.equal(s.newHits.length, 1);
+  const off = harness({ SHADOW: "0" }, [consGame(120)]);
+  await off.run();
+  assert.equal(off.mem.shadow, undefined);
+  // cap: nothing fetched for closes when the day's shadow budget is spent
+  const h2 = harness({ SHADOW_DAILY_CAP: "0" }, [consGame(120)]);
+  await h2.run();
+  await h2.run(Date.parse(START) - 8 * 60e3);
+  assert.ok(Object.values(h2.mem.shadow).every((e) => !e.closedAt));
+});
