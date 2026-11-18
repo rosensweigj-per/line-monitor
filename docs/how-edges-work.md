@@ -106,6 +106,13 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
   - ℹ same game, other market or player
 - Bonus-funded bets are labeled; the sheet is cached about 2 min plus Google's publish delay.
 
+## 8a. Team notes (from the tracker's Notes tab, read-only)
+- Tab "Notes" with columns team, sport, note, until (YYYY-MM-DD, optional), added; published to the web as CSV and
+  set in Netlify as `BET_TRACKER_NOTES_URL` (either the pubhtml or the CSV link works). Cached 5 minutes.
+- A note shows when its team (full name, ignoring punctuation/case) is either team in the alert's game, in the same
+  sport, and `until` hasn't passed: "📝 Duke Blue Devils: …" on alerts, edge cards, Recent alerts and the check page.
+- Information only: never changes EV, stake or grade. A broken link never blocks alerts (/status shows notes.error).
+
 ## 9. Closing lines for CLV (read-only)
 - Every 5-minute wake-up (even outside scan hours; never below the 3,000-credit floor), the monitor reads open bets
   with a gameKey from the Pending tab. For any game starting within 10 minutes it pulls Pinnacle once (bet markets,

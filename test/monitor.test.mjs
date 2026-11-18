@@ -1797,3 +1797,54 @@ test("shadow in a run: both methods logged, consensus never alerts, SHADOW=0 tur
   await h2.run(Date.parse(START) - 8 * 60e3);
   assert.ok(Object.values(h2.mem.shadow).every((e) => !e.closedAt));
 });
+
+// --- team notes (Notes tab, read-only) ---
+import { notesCsvUrl, parseNotes, notesFor, noteLines, loadNotes } from "../lib/notes.mjs";
+
+const NOTES_HEAD = ["team", "sport", "note", "until", "added"];
+
+test("notes: published link in either form, active rows only, matched by team and sport", () => {
+  const base = "https://docs.google.com/spreadsheets/d/e/2PACX-abc/pubhtml?gid=108&single=true";
+  assert.equal(notesCsvUrl(base), "https://docs.google.com/spreadsheets/d/e/2PACX-abc/pub?gid=108&single=true&output=csv");
+  assert.equal(notesCsvUrl(notesCsvUrl(base)), notesCsvUrl(base), "already-CSV links unchanged");
+  const notes = parseNotes([NOTES_HEAD,
+    ["Duke Blue Devils", "NCAAB", "One-dimensional offense: freshman big inside", "", "2026-11-17"],
+    ["Celtics", "NBA", "Short name won't match", "", ""],
+    ["Boston Celtics", "NBA", "Tatum on a minutes limit", "2026-11-05", ""],
+    ["Boston Celtics", "NBA", "Old injury note", "2026-11-01", ""],
+    ["Knicks", "", "", "", ""],
+  ], NOW); // NOW = 2026-11-04 ET
+  assert.deepEqual(notes.map((n) => n.note), ["One-dimensional offense: freshman big inside", "Short name won't match", "Tatum on a minutes limit"]);
+  const nba = { game: "New York Knicks @ Boston Celtics", sportKey: "basketball_nba", side: "Boston Celtics", market: "h2h" };
+  assert.deepEqual(notesFor(nba, notes).map((n) => n.note), ["Tatum on a minutes limit"]);
+  assert.deepEqual(notesFor({ ...nba, sportKey: "basketball_ncaab" }, notes), [], "wrong sport");
+  // props: either team in the game
+  const propHit = { game: "Duke Blue Devils @ Illinois Fighting Illini", sportKey: "basketball_ncaab", side: "Over", player: "Some Player", market: "player_points" };
+  assert.deepEqual(noteLines(propHit, notes), ["📝 Duke Blue Devils: One-dimensional offense: freshman big inside"]);
+  assert.match(noteLines(propHit, [{ team: "Duke Blue Devils", sport: "NCAAB", note: "x".repeat(200) }])[0], /…$/);
+});
+
+test("notes show on alerts and edge cards; never change EV/stake; a broken link never blocks alerts", async () => {
+  const url = "https://docs.google.com/spreadsheets/d/e/2PACX-abc/pub?gid=108&single=true&output=csv";
+  const csv = [NOTES_HEAD.join(","), 'Celtics,NBA,"Big man out, rebounding weak",,2026-11-04'].join("\n");
+  const g = { ...edgeGame(), home_team: "Celtics" }; // fixture team names
+  const h = harness({ BET_TRACKER_NOTES_URL: url }, [g]);
+  const inner = globalThis.fetch;
+  let notesFetches = 0;
+  globalThis.fetch = async (u, o = {}) => (String(u).startsWith("https://docs.google.com/") ? (notesFetches++, new Response(csv)) : inner(u, o));
+  const s = await h.run();
+  assert.match(h.pushes[0].body.message, /📝 Celtics: Big man out, rebounding weak/);
+  assert.match(h.pushes[0].body.message, /Grade B · stake \$15/, "stake unchanged");
+  assert.equal(notesFetches, 1);
+  const { notes } = await loadNotes({ get: async (k) => h.mem[k] ?? null, setJSON: async () => {} }, (k) => ({ BET_TRACKER_NOTES_URL: url })[k], NOW + 60e3);
+  assert.equal(notes.length, 1, "served from the 5-minute cache");
+  const card = renderEdges({ edges: h.mem.edges, now: NOW, flagsFor: (x) => noteLines(x, notes).map((text) => ({ level: "note", text })) });
+  assert.match(card, /<div class="flag note">📝 Celtics: Big man out, rebounding weak<\/div>/);
+  // broken link: alert still goes out, error reported
+  const h2 = harness({ BET_TRACKER_NOTES_URL: url }, [edgeGame()]);
+  const inner2 = globalThis.fetch;
+  globalThis.fetch = async (u, o = {}) => (String(u).startsWith("https://docs.google.com/") ? new Response("<!DOCTYPE html>") : inner2(u, o));
+  const s2 = await h2.run();
+  assert.equal(h2.pushes.length, 1);
+  assert.match(s2.notes.error, /publish/);
+});
