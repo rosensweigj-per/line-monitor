@@ -454,7 +454,7 @@ test("NFL props run: requests only NFL markets and formats the pick", async () =
   assert.match(url, /\/americanfootball_nfl\/events\/g1\/odds/);
   assert.match(url, /markets=player_reception_yds&/);
   assert.match(s.props.americanfootball_nfl, /pulled props for 1 games \(Pinnacle priced 1\), 1 edges/);
-  assert.match(h.pushes[0].body.message, /Travis Kelce Over 54\.5 rec yds \+110 @ FD\n.*\n  NFL · Bills @ Chiefs/);
+  assert.match(h.pushes[0].body.message, /Travis Kelce Over 54\.5 rec yds \+110 @ FD\n[\s\S]*?\n  NFL · Bills @ Chiefs/);
 });
 
 test("edges page: each card has an Open <book> link (deep link, else book site, never non-https)", () => {
@@ -1874,4 +1874,28 @@ test("paper test v2: both methods on the same raw bar, both scored against both 
   assert.equal(summarizeShadow(h.mem.shadow, { rules: null }).reduce((n, r) => n + r.bets, 0), 3);
   assert.equal(shadowStart(h.mem.shadow), new Date(NOW).toISOString());
   assert.match(renderShadow({ summary: v2, recent: [], token: "t", startedAt: shadowStart(h.mem.shadow) }), /same rules since Nov 4, 3:00 PM ET/);
+});
+
+test("consensus check on live edges: agrees / only / disagrees / too few books, shown on alerts and pages", async () => {
+  const { annotateConsensus, consNote } = await import("../lib/consensus.mjs");
+  // FD +120 vs a pack around -110: consensus agrees
+  const g = consGame(120);
+  const [hit] = annotateConsensus(findEdges([g], "basketball_nba", { now: NOW }), { c1: g });
+  assert.ok(hit.cons.ev >= 0.03 && hit.cons.n === 4);
+  assert.match(consNote(hit), /^✓ Consensus agrees: \+\d+\.\d% \(fair [-+]\d+, 4 books\)$/);
+  // Pinnacle alone sees value (books all agree with FD): consensus disagrees
+  // the other books all price Celtics much longer (+140): only Pinnacle makes FD's +120 look good
+  const stale = { ...consGame(120), bookmakers: consGame(120).bookmakers.map((b) => (b.key === "pinnacle" || b.key === "fanduel" ? b : { ...b, markets: [h2h(140, -170)] })) };
+  const s1 = annotateConsensus(findEdges([stale], "basketball_nba", { now: NOW, all: true }), { c1: stale }).find((x) => x.bookKey === "fanduel" && x.side === "Celtics");
+  assert.match(consNote(s1), /^✗ Consensus disagrees: -\d+\.\d% .* — Pinnacle may be off$/);
+  assert.equal(consNote({ cons: { n: 0 } }), "Consensus: too few books at this number");
+  assert.match(consNote({ cons: { n: 5, ev: 0.012, fair: 140 } }), /^~ Consensus: only \+1\.2% \(fair \+140, 5 books\)$/);
+  // in a run: the alert carries the line, the edges card shows it
+  const h = harness({}, [consGame(120)]);
+  await h.run();
+  assert.match(h.pushes[0].body.message, /✓ Consensus agrees: /);
+  assert.match(renderEdges({ edges: h.mem.edges, now: NOW }), /<div class="cons agree">✓ Consensus agrees:/);
+  assert.match(renderEdges({ edges: {}, alerts: h.mem.alerts, now: NOW }), /<div class="cons agree">/);
+  const chk = renderCheck({ then: { bookKey: "fanduel", odds: 120, sportKey: "basketball_nba", market: "h2h" }, result: { status: "ok", hit: h.mem.edges.basketball_nba.hits[0] }, now: NOW, book: "FD" });
+  assert.match(chk, /<div class="verdict good">Still \+EV[\s\S]*<div class="cons agree">✓ Consensus agrees/);
 });

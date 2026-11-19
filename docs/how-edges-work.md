@@ -147,6 +147,12 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 - Results: `/shadow?token=…` (table per method: edges, avg EV, CLV vs each close and beat counts, record, units,
   ROI; latest edges), `&format=csv` or `&format=json`, `&since=YYYY-MM-DD`.
 
+- Consensus check on live alerts (from 11/19, information only; alerts still use Pinnacle pricing): every alert,
+  edge card, Recent alert and Check price page shows how the consensus prices the same bet at the same number:
+  "✓ Consensus agrees: +x%" (>= 3%), "~ Consensus: only +x%" (0–3%), "✗ Consensus disagrees: −x% — Pinnacle may be
+  off", or "too few books at this number". Early paper-test data (11/18): consensus-flagged edges beat the closing
+  prices far more often than Pinnacle-only ones, so favor alerts where the consensus agrees.
+
 ## 11. Monitor fields useful for matching
 sport, game ("Away @ Home"), start (ISO), market, pick, book, bookKey, odds, point, pinPoint, betterLine,
 fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model), check (bool), eventId (Odds API).

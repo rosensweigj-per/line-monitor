@@ -3,6 +3,7 @@ import { getStore } from "@netlify/blobs";
 import { renderCheck } from "../../lib/page.mjs";
 import { fetchAltLines, fetchEvent } from "../../lib/run.mjs";
 import { candidatesFrom, priceBetterNumbers } from "../../lib/alt.mjs";
+import { annotateConsensus } from "../../lib/consensus.mjs";
 import { BOOKS, parseCheckParams, recheck, resolveBooks } from "../../lib/scan.mjs";
 import { loadSettings, minEvFor, withSettings } from "../../lib/settings.mjs";
 import { betFlags, loadOpenBets } from "../../lib/bets.mjs";
@@ -33,6 +34,7 @@ export default async (req: Request) => {
       game = ev?.away_team ? `${ev.away_team} @ ${ev.home_team}` : "";
       start = ev?.commence_time || null;
       result = recheck(ev, sport, { market, side, player, bookKey: then.bookKey });
+      if ((result as any)?.hit) annotateConsensus([(result as any).hit], { [eventId]: ev });
       const rh = (result as any)?.hit;
       if (rh?.betterLine) {
         // same better-number pricing as the scan (shares its 15-min cache and daily cap)
