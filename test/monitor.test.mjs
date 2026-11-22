@@ -130,6 +130,7 @@ function harness(envs, games, propEvent = null) {
   globalThis.fetch = async (url, opts) => {
     url = String(url);
     calls.push(url);
+    if (url.includes("site.api.espn.com")) return new Response(JSON.stringify({ injuries: [] }));
     if (/\/events\/[^/]+\/odds/.test(url)) return new Response(JSON.stringify(propEvent || {}), { headers: { "x-requests-remaining": "8999" } });
     if (url.includes("/events")) return new Response(JSON.stringify([{ id: "g1", commence_time: START }]));
     if (url.includes("/odds")) return new Response(JSON.stringify(games), { headers: { "x-requests-remaining": "9000" } });
@@ -1948,4 +1949,76 @@ test("leans: parsed from the Leans tab, closed like bets, skipped when the key i
   assert.equal(leanLine.split(",")[5], "lean");
   assert.equal(leanLine.split(",")[1], "2");
   assert.ok(csv.find((l) => l.startsWith("b1,")).split(",")[5] === "main");
+});
+
+// --- injury status changes (ESPN, info only) ---
+test("injuries: parse, baseline then diff, 🩹 line with key positions first, news flag, props show own status", async () => {
+  const { parseFeed, updateInjuries, injuryLine, newsMinutes, injuryFlags, sameTeam } = await import("../lib/injuries.mjs");
+  const feed = (rows) => ({ injuries: Object.entries(rows).map(([team, list]) => ({ displayName: team, injuries: list.map(([player, pos, status, abbr]) => ({ status, date: "2026-11-22T15:00Z", shortComment: "c", athlete: { displayName: player, position: { abbreviation: pos }, team: { abbreviation: abbr } } })) })) });
+  assert.equal(parseFeed(feed({ "Buffalo Bills": [["Dalton Kincaid", "TE", "Doubtful", "BUF"]] }), "americanfootball_nfl")[0].pos, "TE");
+  assert.ok(sameTeam("LA Clippers", "Los Angeles Clippers"));
+  assert.ok(sameTeam("Montréal Canadiens", "Montreal Canadiens"));
+
+  const mem = {};
+  const store = { get: async (k) => mem[k] ?? null, setJSON: async (k, v) => { mem[k] = structuredClone(v); } };
+  let cur = feed({
+    "Buffalo Bills": [["Dalton Kincaid", "TE", "Doubtful", "BUF"], ["Some Lineman", "OT", "Questionable", "BUF"]],
+    "Miami Dolphins": [["Tua Tagovailoa", "QB", "Questionable", "MIA"], ["Jonnu Smith", "TE", "Out", "MIA"]],
+  });
+  const fetchJSON = async () => cur;
+  const sports = ["americanfootball_nfl", "basketball_ncaab"];
+  let r = await updateInjuries({ store, sports, fetchJSON, now: NOW });
+  assert.match(r.stats.americanfootball_nfl, /baseline 4/);
+  assert.equal(r.stats.basketball_ncaab, undefined, "no college");
+  assert.equal(mem.injuries.log.length, 0, "baseline logs nothing");
+  // within 5 min: cached, no fetch
+  r = await updateInjuries({ store, sports, fetchJSON: async () => { throw new Error("should be cached"); }, now: NOW + 60e3 });
+  assert.equal(r.stats.americanfootball_nfl, "cached");
+
+  const t2 = NOW + 10 * 60e3;
+  cur = feed({
+    "Buffalo Bills": [["Dalton Kincaid", "TE", "Out", "BUF"], ["Some Lineman", "OT", "Out", "BUF"]],
+    "Miami Dolphins": [["Jonnu Smith", "TE", "Out", "MIA"], ["Tyreek Hill", "WR", "Questionable", "MIA"]],
+  });
+  r = await updateInjuries({ store, sports, fetchJSON, now: t2 });
+  const log = mem.injuries.log;
+  assert.equal(log.length, 4); // Kincaid D->Out, lineman Q->Out, Tua cleared, Hill listed
+  assert.ok(log.find((c) => c.player === "Tua Tagovailoa" && c.to === "Cleared"));
+
+  const h = { sportKey: "americanfootball_nfl", game: "Miami Dolphins @ Buffalo Bills" };
+  const line = injuryLine(h, mem.injuries, t2 + 5 * 60e3);
+  assert.match(line, /^🩹 /);
+  assert.equal(line.split(" · ").length, 3, "max 3");
+  assert.doesNotMatch(line, /Lineman/, "key positions first");
+  assert.match(line, /BUF Kincaid TE: D → Out/);
+  assert.match(line, /MIA Tagovailoa QB: Q → off report/);
+  assert.equal(newsMinutes(h, mem.injuries, t2 + 5 * 60e3), 5);
+  assert.equal(newsMinutes(h, mem.injuries, t2 + 61 * 60e3), null, "news flag only within 60 min");
+  assert.equal(injuryLine({ ...h, game: "Jets @ Patriots" }, mem.injuries, t2), "");
+  // prop on Jonnu Smith (no change): own status shown first
+  const p = injuryLine({ ...h, player: "Jonnu Smith" }, mem.injuries, t2);
+  assert.match(p, /^🩹 MIA Smith TE: Out/);
+  const f = injuryFlags(h, mem.injuries, t2);
+  assert.deepEqual(f.map((x) => x.level), ["news", "injury"]);
+  // empty feed keeps the last snapshot (no mass "cleared")
+  cur = { injuries: [] };
+  r = await updateInjuries({ store, sports, fetchJSON, now: t2 + 10 * 60e3 });
+  assert.match(r.stats.americanfootball_nfl, /empty feed/);
+  assert.equal(mem.injuries.log.length, 4);
+});
+
+test("injury line and news prefix land on the pushed alert; EV and stake unchanged", async () => {
+  const h = harness({}, [edgeGame()]);
+  const at = new Date(NOW - 12 * 60e3).toISOString();
+  h.mem.injuries = { snap: { basketball_nba: { at: NOW - 60e3, map: {} } }, log: [
+    { sport: "basketball_nba", team: "New York Knicks", abbr: "NY", player: "Jalen Brunson", pos: "PG", from: "Questionable", to: "Out", comment: "", at },
+  ] };
+  await h.run();
+  const plain = harness({}, [edgeGame()]);
+  await plain.run();
+  const m = h.pushes[0].body.message;
+  assert.match(m, /🩹 NY Brunson PG: Q → Out/);
+  assert.match(m, /⚠️ news 12 min ago/);
+  assert.match(h.pushes[0].body.title, /^⚠️ news 12m · /);
+  assert.equal(h.pushes[0].body.title.replace(/^⚠️ news 12m · /, ""), plain.pushes[0].body.title);
 });

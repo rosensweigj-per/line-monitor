@@ -8,6 +8,7 @@ import { BOOKS, parseCheckParams, recheck, resolveBooks } from "../../lib/scan.m
 import { loadSettings, minEvFor, withSettings } from "../../lib/settings.mjs";
 import { betFlags, loadOpenBets } from "../../lib/bets.mjs";
 import { loadNotes, noteLines } from "../../lib/notes.mjs";
+import { injuryFlags, loadInjuries } from "../../lib/injuries.mjs";
 
 // GET /check?token=…&s=sport&e=event&m=market&n=side&d=player&b=book&o=odds&p=point&f=fair&pp=pinPrice&x=ev&t=foundAt
 // Re-pulls just that game and market (about 1 credit) and shows whether the edge is still there.
@@ -55,6 +56,7 @@ export default async (req: Request) => {
   const flags = ok ? [
     ...betFlags({ eventId, market, side, player, point: hit?.point ?? then.point, bookKey: then.bookKey, book }, open),
     ...noteLines({ game, side, player, sportKey: sport }, notes).map((text) => ({ level: "note", text })),
+    ...injuryFlags({ game, player, sportKey: sport }, await loadInjuries(store)),
   ] : [];
   const pick = market === "h2h" ? `${side} ML`
     : player ? `${player} ${side} ${then.point ?? ""}`

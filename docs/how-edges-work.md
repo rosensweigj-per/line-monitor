@@ -162,3 +162,18 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 ## 11. Monitor fields useful for matching
 sport, game ("Away @ Home"), start (ISO), market, pick, book, bookKey, odds, point, pinPoint, betterLine,
 fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model), check (bool), eventId (Odds API).
+
+## 11. Injury status changes (info only, since 11/22)
+- Source: ESPN's free injuries feed (NFL, NBA, NHL, MLB; no college: ESPN has no usable college data). Polled on scan
+  runs for leagues with a game in the next 6 hours, at most every 5 minutes. No Odds API credits.
+- Each poll is compared with the last snapshot: newly listed, status changed, or dropped off the report ("off report").
+  A rolling 24-hour change log is kept. The first poll of a league is a baseline (nothing logged).
+- Alerts, edge cards and the check page get one `🩹` line: up to 3 changes for either team in the last 12 hours, key
+  positions first (NFL QB/RB/WR/TE, NHL G, MLB SP; every NBA player counts). Player props show that player's own status
+  first, then same-team same-position changes.
+- If a key-position change for either team happened in the last 60 minutes, the alert title starts with
+  `⚠️ news Nm` and the alert says to check the consensus line. Reason: if the book moved on the news before Pinnacle
+  did, Pinnacle's fair price is stale and the "edge" can be on the wrong side; the consensus line shows ✗ when the
+  other books have moved too.
+- Never changes EV, stake or grade. ESPN posts changes minutes after the news, so this explains lines more than it
+  beats them. Turn off with `INJURIES=0`. Debug: `/status?token=…&injuries=1`.

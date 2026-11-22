@@ -6,6 +6,7 @@ import { resolveBooks } from "../../lib/scan.mjs";
 import { loadSettings, withSettings } from "../../lib/settings.mjs";
 import { betFlags, loadOpenBets } from "../../lib/bets.mjs";
 import { loadNotes, noteLines } from "../../lib/notes.mjs";
+import { injuryFlags, loadInjuries } from "../../lib/injuries.mjs";
 
 // GET  /edges?token=RUN_TOKEN -> phone-friendly page of the edges from each sport's latest pull.
 // POST /edges?token=RUN_TOKEN -> "Scan now" button: full scan (ignores cadence and quiet hours), then back to the page.
@@ -35,7 +36,8 @@ export default async (req: Request) => {
   const shortcutBooks = resolveBooks(env("BOOK_SHORTCUTS") || "");
   const { open } = await loadOpenBets(store, env);
   const { notes } = await loadNotes(store, env);
-  const flagsFor = (h: any) => [...betFlags(h, open), ...noteLines(h, notes).map((text) => ({ level: "note", text }))];
+  const injuries = await loadInjuries(store);
+  const flagsFor = (h: any) => [...betFlags(h, open), ...noteLines(h, notes).map((text) => ({ level: "note", text })), ...injuryFlags(h, injuries)];
   return new Response(renderEdges({ edges, state, lastRun, now: Date.now(), token, scanned: url.searchParams.has("scanned"), shortcutBooks, flagsFor, alerts: alerts || [], closest, today }), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });

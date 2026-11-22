@@ -22,6 +22,12 @@ export default async (req: Request) => {
       return Response.json({ ok: false, error: (e as Error).message }, { status: 500 });
     }
   }
+  if (url.searchParams.get("injuries")) {
+    // Debug view of the ESPN injury snapshot and the 24h change log (newest first).
+    const d = ((await store.get("injuries", { type: "json" })) || { snap: {}, log: [] }) as any;
+    const snap = Object.fromEntries(Object.entries(d.snap || {}).map(([k, v]: any) => [k, { at: new Date(v.at).toISOString(), listed: Object.keys(v.map || {}).length }]));
+    return Response.json({ snap, changes: (d.log || []).slice().reverse().slice(0, 100) });
+  }
   if (url.searchParams.get("run")) {
     return Response.json(await runMonitor({ store, env, force: true }));
   }
