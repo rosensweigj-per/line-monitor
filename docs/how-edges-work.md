@@ -163,7 +163,7 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 sport, game ("Away @ Home"), start (ISO), market, pick, book, bookKey, odds, point, pinPoint, betterLine,
 fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model), check (bool), eventId (Odds API).
 
-## 11. Injury status changes (info only, since 11/22)
+## 12. Injury status changes (info only, since 11/22)
 - Source: ESPN's free injuries feed (NFL, NBA, NHL, MLB; no college: ESPN has no usable college data). Polled on scan
   runs for leagues with a game in the next 6 hours, at most every 5 minutes. No Odds API credits.
 - Each poll is compared with the last snapshot: newly listed, status changed, or dropped off the report ("off report").
