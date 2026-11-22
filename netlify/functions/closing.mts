@@ -3,7 +3,7 @@ import { getStore } from "@netlify/blobs";
 import { closesToCsv } from "../../lib/closing.mjs";
 
 // GET /closing?token=RUN_TOKEN[&since=ISO][&keys=gameKey1,gameKey2][&format=csv]
-// format=csv: one row per bet, header id,sheetRow,gameKey,closeFair,clvPct,source,missing,capturedAt (oldest first).
+// format=csv: one row per bet or lean (lean rows: source "lean", clvPct blank), header id,sheetRow,gameKey,closeFair,clvPct,source,missing,capturedAt (oldest first).
 // Closes are kept for the whole season (append-only).
 // Read-only JSON of Pinnacle closing prices the monitor captured for open bets (last ~10 min before start), at each
 // bet's exact number, with CLV per bet. The tracker fetches this and writes CLV itself; the monitor never writes to

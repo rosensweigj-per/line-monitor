@@ -1899,3 +1899,53 @@ test("consensus check on live edges: agrees / only / disagrees / too few books, 
   const chk = renderCheck({ then: { bookKey: "fanduel", odds: 120, sportKey: "basketball_nba", market: "h2h" }, result: { status: "ok", hit: h.mem.edges.basketball_nba.hits[0] }, now: NOW, book: "FD" });
   assert.match(chk, /<div class="verdict good">Still \+EV[\s\S]*<div class="cons agree">✓ Consensus agrees/);
 });
+
+// --- closing lines for leans (Leans tab, capture only) ---
+test("leans: parsed from the Leans tab, closed like bets, skipped when the key is an open bet, CSV source=lean", async () => {
+  const { parseLeans } = await import("../lib/bets.mjs");
+  const { closesToCsv } = await import("../lib/closing.mjs");
+  const LH = ["id", "loggedAt", "gameDate", "sport", "game", "lean", "betType", "bestOdds", "bestBook", "fairOdds", "bet (Y/N)", "stake", "closeFair", "clvPct", "result / reason", "gameTime (ET)", "tv", "gameKey"];
+  const lrow = (id, sport, bet, key) => { const r = Array(18).fill(""); r[0] = id; r[3] = sport; r[10] = bet; r[17] = key; return r; };
+  const leans = parseLeans([LH,
+    lrow("lean_1", "NFL", "N", "g1|totals|Over|48.5"),
+    lrow("lean_old", "NFL", "Y", ""),                               // no key: skipped
+    lrow("lean_2", "NFL", "Y", "g1|spreads|Detroit Lions|-3.5"),  // also an open bet: rides on the bet's close
+    lrow("lean_3", "NFL", "N", "g1|team_totals|Buffalo Bills Over|30.5"),
+  ]);
+  assert.equal(leans.length, 3);
+  assert.equal(leans[0].sheetRow, "2");
+  assert.equal(leans[2].sheetRow, "5");
+  assert.equal(leans[2].player, "Buffalo Bills");
+  assert.equal(leans[2].ou, "Over");
+  const open = parseOpenBets([HEADER,
+    betRow({ id: "b1", sheetRow: "600", book: "BetMGM", sport: "NFL", odds: "-112", stake: "25", status: "pending", gameKey: "g1|spreads|Detroit Lions|-3.5" }),
+  ]);
+  const mem = {};
+  const store = { get: async (k) => mem[k] ?? null, setJSON: async (k, v) => { mem[k] = structuredClone(v); } };
+  const start = NOW + 7 * 60e3;
+  const calls = [];
+  const getEvents = async () => [{ id: "g1", commence_time: new Date(start).toISOString() }];
+  const getPinnacle = async (q) => {
+    calls.push(q);
+    return { json: { bookmakers: [{ key: "pinnacle", markets: [
+      { key: "totals", outcomes: [{ name: "Over", price: -105, point: 48.5 }, { name: "Under", price: -115, point: 48.5 }] },
+      { key: "spreads", outcomes: [{ name: "Detroit Lions", price: -110, point: -3.5 }, { name: "Tampa Bay Buccaneers", price: -110, point: 3.5 }] },
+      { key: "team_totals", outcomes: [{ name: "Over", description: "Buffalo Bills", price: -110, point: 30.5 }, { name: "Under", description: "Buffalo Bills", price: -110, point: 30.5 }] },
+    ] }] }, headers: new Headers({ "x-requests-last": "4" }) };
+  };
+  const s = await captureCloses({ store, open, leans, getEvents, getPinnacle, now: NOW });
+  assert.equal(s.leansWithKey, 2, "lean_2 shares the open bet's key");
+  assert.equal(calls.length, 1, "one pull for the game");
+  assert.match(calls[0].markets, /team_totals/);
+  assert.match(calls[0].markets, /alternate_team_totals/);
+  const tot = mem.closing["g1|totals|Over|48.5"];
+  assert.equal(tot.bets[0].id, "lean_1");
+  assert.equal(tot.bets[0].clvPct, null);
+  assert.equal(mem.closing["g1|spreads|Detroit Lions|-3.5"].bets.length, 1, "only the bet row, no duplicate lean row");
+  assert.equal(mem.closing["g1|team_totals|Buffalo Bills Over|30.5"].closeFair, -100);
+  const csv = closesToCsv(Object.values(mem.closing)).trim().split("\n");
+  const leanLine = csv.find((l) => l.startsWith("lean_1,"));
+  assert.equal(leanLine.split(",")[5], "lean");
+  assert.equal(leanLine.split(",")[1], "2");
+  assert.ok(csv.find((l) => l.startsWith("b1,")).split(",")[5] === "main");
+});

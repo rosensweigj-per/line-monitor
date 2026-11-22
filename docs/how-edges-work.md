@@ -127,6 +127,12 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
 - clvPct = (closeProb × decimal odds of the bet − 1) × 100. "Close" = Pinnacle's price 5–10 min before start.
 - Bets without a gameKey get no close. Capped at 60 credits/day (`CLOSE_DAILY_CAP`), typically 1–3 per game.
 - Kept for the whole season, append-only: a captured game is never changed or deleted.
+- **Leans (since 11/22):** the monitor also reads the Leans tab (published as CSV, `BET_TRACKER_LEANS_URL`) and
+  captures a close for every lean with a gameKey (column R), bet or not, the same way. A lean whose gameKey is
+  also an open bet gets no extra row (the Leans tab looks the close up by gameKey). Lean rows in the CSV: `id` = the
+  lean id, `sheetRow` = the Leans row, `source` = `lean`, `clvPct` blank (the sheet computes it from the unboosted
+  price). Team totals are pulled too (`team_totals` + `alternate_team_totals`); if Pinnacle doesn't post one the row
+  says `missing`. Capture only: leans never alert.
 
 ## 10. Paper test: Pinnacle method vs consensus method (started 11/18)
 - Why: through 11/17, alert bets were 35-62 (−$224) despite +4.9% average CLV vs Pinnacle. Props looked best on
