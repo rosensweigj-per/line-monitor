@@ -16,7 +16,8 @@ export default async (req: Request) => {
   const store = getStore({ name: "line-monitor", consistency: "strong" });
   const env = withSettings((k: string) => Netlify.env.get(k)?.trim(), await loadSettings(store));
   const key = env("ODDS_API_KEY");
-  const html = (o: object) => new Response(renderBest({ q, token, css: CSS, shortcutBooks: resolveBooks(env("BOOK_SHORTCUTS") || ""), ...o }), {
+  const boost = Math.max(0, Math.min(200, Number(url.searchParams.get("boost")) || 0));
+  const html = (o: object) => new Response(renderBest({ q, token, boost, css: CSS, shortcutBooks: resolveBooks(env("BOOK_SHORTCUTS") || ""), ...o }), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
   if (!q) return html({});

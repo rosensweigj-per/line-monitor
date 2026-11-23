@@ -966,8 +966,8 @@ test("best price: team search, book comparison with EV vs Pinnacle, render", () 
   assert.deepEqual(sp.rows.map((r) => [r.book, r.point, r.ev == null ? null : +r.ev.toFixed(4), r.floor]), [["DK", -2.5, -0.0652, true], ["FD", -3.5, null, false]]);
   const html = renderBest({ q: "mich st", games: [{ sport: "basketball_ncaab", event: ev, team: "Michigan State Spartans", cmp }], token: "t", now: NOW });
   assert.match(html, /NCAAB · Oakland Golden Grizzlies @ Michigan State Spartans/);
-  assert.match(html, /<div class="brow best"><span><a href="https:\/\/sports\.va\.betmgm\.com[^"]*"[^>]*>BetMGM<\/a><\/span><span><b>\+150<\/b><\/span>/);
-  assert.match(html, /<div class="brow"><span><a href="https:\/\/sportsbook\.fanduel\.com"[^>]*>FD<\/a><\/span><span><b>\+105<\/b><\/span><span class="pos">2\.5%<\/span>/);
+  assert.match(html, /<div class="brow best" data-price="150"[^>]*><span><a href="https:\/\/sports\.va\.betmgm\.com[^"]*"[^>]*>BetMGM<\/a><\/span><span><b>\+150<\/b>/);
+  assert.match(html, /<div class="brow" data-price="105" data-p="0\.5"[^>]*><span><a href="https:\/\/sportsbook\.fanduel\.com"[^>]*>FD<\/a><\/span><span><b>\+105<\/b><small class="bx"><\/small><\/span><span class="evc pos">2\.5%<\/span>/);
   assert.match(html, /fair -100 \(Pin -110\)/);
   assert.match(renderBest({ q: "zzz", games: [], token: "t" }), /No upcoming game found/);
 });
@@ -2021,4 +2021,20 @@ test("injury line and news prefix land on the pushed alert; EV and stake unchang
   assert.match(m, /⚠️ news 12 min ago/);
   assert.match(h.pushes[0].body.title, /^⚠️ news 12m · /);
   assert.equal(h.pushes[0].body.title.replace(/^⚠️ news 12m · /, ""), plain.pushes[0].body.title);
+});
+
+test("profit boost math and boost chips on the best page", async () => {
+  const { boostedDec, boostedEv, decToAmerican, renderBest } = await import("../lib/best.mjs");
+  assert.equal(decToAmerican(boostedDec(-110, 0.25)), 114);  // -110 with a 25% boost -> +114 (FD example)
+  assert.equal(decToAmerican(boostedDec(-120, 0.25)), 104);
+  assert.equal(decToAmerican(boostedDec(100, 0.30)), 130);
+  assert.equal(decToAmerican(boostedDec(-200, 0.5)), -133);
+  assert.ok(Math.abs(boostedEv(-110, 0.5, 0.25) - (0.5 * (1 + (100 / 110) * 1.25) - 1)) < 1e-12);
+  const html = renderBest({ q: "x", games: [{ sport: "basketball_nba", event: { away_team: "A", home_team: "B", commence_time: new Date(NOW + 3600e3).toISOString() },
+    team: "A", cmp: { h2h: [{ name: "A", fair: { american: -100, pinPrice: -110 }, rows: [{ bookKey: "fanduel", book: "FD", price: -110, ev: -0.045, p: 0.5 }] }], spreads: [], totals: [] } }], token: "t", boost: 25, now: NOW });
+  assert.match(html, /class="chip on" data-b="25" aria-pressed="true">25%/);
+  assert.match(html, /data-pick="FD A ML -110"/);
+  assert.match(html, /apply\(25\)/);
+  assert.match(html, /name="boost" id="boostIn" value="25"/);
+  assert.doesNotMatch(renderBest({ q: "zzz", games: [], token: "t" }), /class="chip/, "no chips without games");
 });
