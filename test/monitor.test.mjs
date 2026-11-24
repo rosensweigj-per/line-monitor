@@ -2038,3 +2038,50 @@ test("profit boost math and boost chips on the best page", async () => {
   assert.match(html, /name="boost" id="boostIn" value="25"/);
   assert.doesNotMatch(renderBest({ q: "zzz", games: [], token: "t" }), /class="chip/, "no chips without games");
 });
+
+// --- SGP builder ---
+test("SGP: legs priced vs the other books, parlay math, break-even with boost, warnings, render", async () => {
+  const { buildLegs, parlayProb, breakEvenDec, decToAm, sgpEv, sgpWarnings, sgpMarkets, renderSgp } = await import("../lib/sgp.mjs");
+  assert.equal(sgpMarkets("basketball_nba"), "h2h,spreads,totals,player_points,player_rebounds,player_assists,player_threes");
+  const mk = (h, a, o, u, pts) => [
+    { key: "h2h", outcomes: [{ name: "Detroit Pistons", price: h }, { name: "Boston Celtics", price: a }] },
+    { key: "totals", outcomes: [{ name: "Over", price: o, point: 220.5 }, { name: "Under", price: u, point: 220.5 }] },
+    { key: "player_points", outcomes: [{ name: "Over", description: "Cade Cunningham", price: pts[0], point: 26.5 }, { name: "Under", description: "Cade Cunningham", price: pts[1], point: 26.5 }] },
+  ];
+  const ev = { id: "e", away_team: "Boston Celtics", home_team: "Detroit Pistons", commence_time: new Date(NOW + 3600e3).toISOString(), bookmakers: [
+    { key: "pinnacle", markets: mk(-110, -110, -110, -110, [-110, -110]) },
+    { key: "draftkings", markets: mk(-110, -110, -110, -110, [-110, -110]) },
+    { key: "fanduel", markets: mk(-105, -115, -112, -108, [-120, 100]) },
+    { key: "betmgm", markets: mk(-110, -110, -110, -110, [-110, -110]) },
+  ] };
+  const books = buildLegs(ev, "basketball_nba", { skipBooks: new Set(["betmgm"]) });
+  assert.deepEqual(books.map((b) => b.key), ["draftkings", "fanduel"]);
+  const fd = books.find((b) => b.key === "fanduel");
+  const ml = fd.legs.find((l) => l.label === "Detroit Pistons ML");
+  assert.equal(ml.p, 0.5, "other books are all 50/50");
+  assert.equal(ml.n, 3, "Pinnacle, DK and BetMGM (a book you don't bet still informs the fair price); FD itself excluded");
+  assert.ok(Math.abs(ml.ev - (0.5 * dec(-105) - 1)) < 1e-4);
+  assert.equal(fd.legs.find((l) => l.player === "Cade Cunningham" && l.ou === "Over").label, "Cade Cunningham O 26.5 pts");
+
+  // math: two 50% legs -> fair +300; 30% boost -> break-even pre-boost price +231
+  const p = parlayProb([0.5, 0.5]);
+  assert.equal(decToAm(1 / p), 300);
+  assert.equal(decToAm(breakEvenDec(p, 0.3)), 231);
+  assert.ok(Math.abs(sgpEv(231, p, 0.3)) < 0.002, "break-even price gives ~0 EV");
+  assert.ok(sgpEv(260, p, 0.3) > 0 && sgpEv(200, p, 0.3) < 0);
+
+  // warnings
+  const L = (o) => ({ mk: "h2h", team: "", player: "", ou: "", label: "x", p: 0.5, ...o });
+  assert.match(sgpWarnings([L({ team: "A" }), L({ team: "B" })]).join(), /both teams/);
+  assert.match(sgpWarnings([L({ mk: "totals", ou: "Over" }), L({ mk: "player_points", player: "Cade", ou: "Under" })]).join(), /Game Over with a player Under/);
+  assert.match(sgpWarnings([L({ mk: "player_points", player: "Cade", ou: "Over" }), L({ mk: "player_points", player: "Cade", ou: "Under" })]).join(), /Over and Under on the same line/);
+  assert.deepEqual(sgpWarnings([L({ team: "A" }), L({ mk: "player_points", player: "Cade", ou: "Over" })]), []);
+
+  const html = renderSgp({ event: ev, sport: "basketball_nba", books, token: "t", boost: 30, now: NOW });
+  assert.match(html, /NBA · Boston Celtics @ Detroit Pistons/);
+  assert.match(html, /"book":"fanduel"/, "FanDuel picked by default");
+  assert.doesNotMatch(html, /<\/script>[^]*<script>[^]*"label":"[^"]*<\//, "no raw < in embedded data");
+  const list = renderSgp({ q: "lions", found: [{ sport: "americanfootball_nfl", event: { id: "x1", away_team: "Bucs", home_team: "Lions", commence_time: new Date(NOW + 3600e3).toISOString() } }], token: "t" });
+  assert.match(list, /href="\/sgp\?token=t&s=americanfootball_nfl&e=x1&boost=30"/);
+  assert.match(renderSgp({ q: "zzz", token: "t" }), /No upcoming NFL or NBA game/);
+});

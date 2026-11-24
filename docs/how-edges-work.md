@@ -177,3 +177,16 @@ fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model)
   other books have moved too.
 - Never changes EV, stake or grade. ESPN posts changes minutes after the news, so this explains lines more than it
   beats them. Turn off with `INJURIES=0`. Debug: `/status?token=…&injuries=1`.
+
+## 13. SGP builder (`/sgp`, since 11/24; information only)
+- Find an NFL or NBA game, pick a book, a profit boost and 2–6 legs (moneyline, spread, total; NBA points/rebounds/
+  assists/threes; NFL passing/rushing/receiving yards and receptions). About 7 credits per game, cached 5 minutes.
+- Each leg shows that book's price and its EV against the consensus no-vig price of the other books at that exact
+  number (Pinnacle counted twice; books you don't bet still count toward the fair price).
+- The Odds API has no SGP prices, so the page gives the fair parlay price (leg chances multiplied, i.e. legs treated as
+  unrelated) and the lowest pre-boost SGP price that is +EV with the chosen boost. Type the book's SGP price to see the
+  boosted price and EV.
+- Legs that go together (a team wins + its QB/stars go over) make the real fair price better than shown (safe side).
+  Legs that work against each other make it worse; the page warns on both-teams sides, Over and Under on the same line,
+  and a game total paired with a player prop the other way. Anytime TD isn't included (books post only the Yes side,
+  so there's no fair price).
