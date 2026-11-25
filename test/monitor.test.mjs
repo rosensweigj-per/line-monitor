@@ -2189,3 +2189,35 @@ test("SGP alt lines: markets added on request, alt numbers priced against main +
   assert.match(html, /about 16 credits; keeps/);
   assert.match(renderSgp({ event: ev, sport: "basketball_nba", books: [fd], token: "t", pulledAt: NOW, now: NOW }), /Alt lines off/);
 });
+
+test("SGP promo rules: exact leg count and minimum odds by the regular-parlay price, ranked by EV with the boost", async () => {
+  const { suggestCombos, renderSgp } = await import("../lib/sgp.mjs");
+  // leg with a given price and EV vs fair: p = (1+ev)/dec
+  const L = (id, price, ev, o = {}) => ({ id, price, ev, p: (1 + ev) / dec(price), n: 4, mk: "player_" + id, team: "", player: id, ou: "Over", label: id, ...o });
+  const legs = [
+    L("fav1", -250, 0.00), L("fav2", -240, -0.01), L("fav3", -260, -0.02), L("fav4", -300, -0.06),
+    L("even1", -110, 0.01), L("even2", 100, -0.01), L("long", 250, -0.02),
+  ];
+  // 3 legs at +100 or longer
+  const s = suggestCombos(legs, { legs: 3, minOdds: 100, boost: 0.3 });
+  assert.ok(s.length > 0 && s.length <= 4);
+  assert.ok(s.every((c) => c.ids.length === 3 && c.dec >= 2 - 1e-9), "exactly 3 legs, parlay at +100 or longer");
+  for (let i = 1; i < s.length; i++) assert.ok(s[i - 1].estEv >= s[i].estEv, "best estimated EV first");
+  const c = s[0];
+  assert.ok(Math.abs(c.estEv - (c.p * (1 + (c.dec - 1) * 1.3) - 1)) < 1e-12);
+  assert.ok(!s.some((x) => x.ids.includes("fav4")), "the -6% leg never makes the top");
+  // three -400 legs make about +95: short of +100, so no combo qualifies (three -250s would be about +174)
+  assert.equal(suggestCombos([L("a", -400, 0), L("b", -400, 0), L("c", -400, 0)], { legs: 3, minOdds: 100 }).length, 0);
+  assert.equal(suggestCombos([L("a", -380, 0), L("b", -380, 0), L("c", -380, 0)], { legs: 3, minOdds: 100 }).length, 1);
+  // min odds only: 2-4 legs allowed
+  const m = suggestCombos(legs, { minOdds: 300, boost: 0.3 });
+  assert.ok(m.length && m.every((x) => x.dec >= 4 - 1e-9 && x.ids.length >= 2 && x.ids.length <= 4));
+  // no promo: unchanged behaviour (2- and 3-leg lists by combined leg EV)
+  const plain = suggestCombos(legs, {});
+  assert.deepEqual([...new Set(plain.map((x) => x.ids.length))], [2, 3]);
+
+  const ev = { id: "e", away_team: "A", home_team: "B", commence_time: new Date(NOW + 3600e3).toISOString() };
+  const html = renderSgp({ event: ev, sport: "basketball_nba", books: [{ key: "fanduel", name: "FD", legs }], token: "t", now: NOW });
+  assert.match(html, /id="pn"[^]*data-n="3">3<\/button>/);
+  assert.match(html, /id="pm"[^]*data-m="100">\+100<\/button>[^]*id="pmx"/);
+});
