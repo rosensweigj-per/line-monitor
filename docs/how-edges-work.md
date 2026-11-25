@@ -205,6 +205,9 @@ fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model)
   the bet is only on if the app's SGP price reaches the "worth it at" number and the promo minimum. With a profit boost,
   the boost is worth more at longer odds (30% adds about 15% EV at +100, 22% at +300, 27% at +900) while every extra
   leg adds vig, so the best picks are usually the fewest legs the promo allows, built from legs near fair.
+- Aim: "Best EV" (default) or "Safest". Safest looks at the 40 most likely legs within 5% of fair (heavy favourites
+  included), keeps combos that are still +EV with the boost, and lists the highest win chance first, so picks sit close
+  to the minimum. Cards show the win chance. Turning Alt lines on gives it the short legs it needs to get near +100.
 - The Odds API has no SGP prices, so the page gives the fair parlay price (leg chances multiplied, i.e. legs treated as
   unrelated) and the lowest pre-boost SGP price that is +EV with the chosen boost. Type the book's SGP price to see the
   boosted price and EV.

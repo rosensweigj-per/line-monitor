@@ -2212,6 +2212,11 @@ test("SGP promo rules: exact leg count and minimum odds by the regular-parlay pr
   // min odds only: 2-4 legs allowed
   const m = suggestCombos(legs, { minOdds: 300, boost: 0.3 });
   assert.ok(m.length && m.every((x) => x.dec >= 4 - 1e-9 && x.ids.length >= 2 && x.ids.length <= 4));
+  // aim = safe: highest win chance first, only +EV combos, so it sits close to the minimum
+  const safe = suggestCombos(legs, { legs: 3, minOdds: 100, boost: 0.3, aim: "safe" });
+  assert.ok(safe.length && safe.every((x) => x.estEv > 0 && x.dec >= 2 - 1e-9));
+  for (let i = 1; i < safe.length; i++) assert.ok(safe[i - 1].p >= safe[i].p);
+  assert.ok(safe[0].p > s[0].p && safe[0].dec < s[0].dec, "safer and shorter than the best-EV pick");
   // no promo: unchanged behaviour (2- and 3-leg lists by combined leg EV)
   const plain = suggestCombos(legs, {});
   assert.deepEqual([...new Set(plain.map((x) => x.ids.length))], [2, 3]);
@@ -2220,4 +2225,5 @@ test("SGP promo rules: exact leg count and minimum odds by the regular-parlay pr
   const html = renderSgp({ event: ev, sport: "basketball_nba", books: [{ key: "fanduel", name: "FD", legs }], token: "t", now: NOW });
   assert.match(html, /id="pn"[^]*data-n="3">3<\/button>/);
   assert.match(html, /id="pm"[^]*data-m="100">\+100<\/button>[^]*id="pmx"/);
+  assert.match(html, /id="aim"[^]*data-a="safe">Safest<\/button>/);
 });
