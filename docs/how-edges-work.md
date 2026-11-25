@@ -187,6 +187,12 @@ fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model)
   are one list, best EV first. Picked legs always stay visible. `&f=all` or `&f=0` in the link.
 - Sort: Best EV (default; every leg, main lines and props, in one list best first) or By market (sections, props
   grouped by player). `&o=group` in the link.
+- "Need 3+ books" (on by default): legs whose fair price comes from fewer than 3 other books are tagged "fair from N
+  book(s) only" and hidden from filtered lists and suggestions; turn it off to see them.
+- Suggested SGPs: the best 2-leg and 3-leg combos at the chosen book (top 2 of each), from the 12 best legs, skipping
+  legs that clash (two moneyline/spread legs, two legs from the same line, a game total with a player prop the other way).
+  Ranked by the legs' combined EV at the book's own prices; each shows the fair price and the break-even SGP price with
+  the boost. "Use" loads it into the slip.
 - The Odds API has no SGP prices, so the page gives the fair parlay price (leg chances multiplied, i.e. legs treated as
   unrelated) and the lowest pre-boost SGP price that is +EV with the chosen boost. Type the book's SGP price to see the
   boosted price and EV.

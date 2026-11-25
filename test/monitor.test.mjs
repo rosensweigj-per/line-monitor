@@ -2107,3 +2107,33 @@ test("SGP leg filter: EV at least X, picked legs always kept, all = no filter, c
   assert.match(renderSgp({ q: "x", found: [{ sport: "basketball_nba", event: { ...ev, id: "g" } }], token: "t", sort: "group" }), /&f=-3&o=group"/);
   assert.match(renderSgp({ q: "x", found: [{ sport: "basketball_nba", event: { ...ev, id: "g" } }], token: "t", minEv: 0 }), /&boost=30&f=0"/);
 });
+
+test("SGP suggestions: best non-clashing 2- and 3-leg combos; thin fair prices left out unless allowed", async () => {
+  const { suggestCombos, renderSgp } = await import("../lib/sgp.mjs");
+  const L = (id, ev, o = {}) => ({ id, ev, p: 0.5, n: 4, mk: "player_points", team: "", player: id, ou: "Over", label: id, price: -110, ...o });
+  const legs = [
+    L("a", 0.02), L("b", 0.01), L("c", 0.00), L("d", -0.01),
+    L("thin", 0.08, { n: 1 }),                                     // great EV but priced from 1 book
+    L("mlA", 0.03, { mk: "h2h", team: "A", player: "", ou: "" }),
+    L("spA", 0.025, { mk: "spreads", team: "A", player: "", ou: "" }), // same team as mlA: never together
+    L("under", 0.015, { mk: "totals", player: "", ou: "Under" }),   // clashes with player overs
+    L("nofair", 0.5, { p: null, ev: null }),
+  ];
+  const s = suggestCombos(legs);
+  const two = s.filter((c) => c.ids.length === 2), three = s.filter((c) => c.ids.length === 3);
+  assert.equal(two.length, 3); assert.equal(three.length, 3);
+  assert.ok(!s.some((c) => c.ids.includes("thin") || c.ids.includes("nofair")), "thin and unpriced legs left out");
+  assert.ok(!s.some((c) => c.ids.includes("mlA") && c.ids.includes("spA")), "ML + spread of the same team never paired");
+  assert.ok(!s.some((c) => c.ids.includes("under") && c.ids.some((x) => "abcd".includes(x))), "game Under never paired with a player Over");
+  assert.deepEqual(two[0].ids, ["mlA", "a"], "best combined EV first");
+  assert.ok(Math.abs(two[0].combEv - (1.03 * 1.02 - 1)) < 1e-12);
+  assert.ok(Math.abs(two[0].p - 0.25) < 1e-12);
+  assert.ok(suggestCombos(legs, { allowThin: true })[0].ids.includes("thin"), "allowed when the 3+ books rule is off");
+  assert.deepEqual(suggestCombos([L("a", 0.01)]), [], "need at least two legs");
+
+  const ev = { id: "e", away_team: "A", home_team: "B", commence_time: new Date(NOW + 3600e3).toISOString() };
+  const html = renderSgp({ event: ev, sport: "basketball_nba", books: [{ key: "fanduel", name: "FD", legs }], token: "t", now: NOW });
+  assert.match(html, /var suggestCombos=function suggestCombos\(legs, opts\)/, "the page runs the same function");
+  assert.match(html, /id="thin"[^>]*>Need 3\+ books/);
+  assert.match(html, /"thin":3/);
+});
