@@ -3,13 +3,13 @@ import { getStore } from "@netlify/blobs";
 import { CSS } from "../../lib/page.mjs";
 import { fetchEvent } from "../../lib/run.mjs";
 import { findGames } from "../../lib/best.mjs";
-import { buildLegs, renderSgp, SGP_SPORTS, sgpMarkets } from "../../lib/sgp.mjs";
+import { buildLegs, DEFAULT_SGP_FILTER, renderSgp, SGP_SPORTS, sgpMarkets } from "../../lib/sgp.mjs";
 import { resolveBooks } from "../../lib/scan.mjs";
 import { loadSettings, withSettings } from "../../lib/settings.mjs";
 
 // GET /sgp?token=…&q=lions            -> NFL/NBA games for that team (free events endpoint)
 // GET /sgp?token=…&s=sport&e=eventId  -> one game's legs at every book (about 7 credits; cached 5 min)
-// Optional &boost=30&b=fanduel. Information only; nothing is bet.
+// Optional &boost=30&b=fanduel&f=-3 (leg filter: EV at least -3%; f=all shows every leg). Information only; nothing is bet.
 const CACHE_MS = 5 * 60e3;
 
 export default async (req: Request) => {
@@ -21,10 +21,12 @@ export default async (req: Request) => {
   const env = withSettings((k: string) => Netlify.env.get(k)?.trim(), await loadSettings(store));
   const key = env("ODDS_API_KEY");
   const boost = Math.max(0, Math.min(200, Number(q.get("boost") ?? 30) || 0));
+  const fRaw = q.get("f");
+  const minEv = fRaw === "all" ? null : fRaw != null && Number.isFinite(Number(fRaw)) ? Math.max(-50, Math.min(50, Number(fRaw))) : DEFAULT_SGP_FILTER;
   const query = (q.get("q") || "").trim().slice(0, 60);
   const sport = q.get("s") || "";
   const eventId = q.get("e") || "";
-  const html = (o: object) => new Response(renderSgp({ q: query, token, css: CSS, boost, bookKey: q.get("b") || "", ...o }), {
+  const html = (o: object) => new Response(renderSgp({ q: query, token, css: CSS, boost, minEv, bookKey: q.get("b") || "", ...o }), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
   try {

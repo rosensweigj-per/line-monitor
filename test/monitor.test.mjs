@@ -2082,6 +2082,24 @@ test("SGP: legs priced vs the other books, parlay math, break-even with boost, w
   assert.match(html, /"book":"fanduel"/, "FanDuel picked by default");
   assert.doesNotMatch(html, /<\/script>[^]*<script>[^]*"label":"[^"]*<\//, "no raw < in embedded data");
   const list = renderSgp({ q: "lions", found: [{ sport: "americanfootball_nfl", event: { id: "x1", away_team: "Bucs", home_team: "Lions", commence_time: new Date(NOW + 3600e3).toISOString() } }], token: "t" });
-  assert.match(list, /href="\/sgp\?token=t&s=americanfootball_nfl&e=x1&boost=30"/);
+  assert.match(list, /href="\/sgp\?token=t&s=americanfootball_nfl&e=x1&boost=30&f=-3"/);
   assert.match(renderSgp({ q: "zzz", token: "t" }), /No upcoming NFL or NBA game/);
+});
+
+test("SGP leg filter: EV at least X, picked legs always kept, all = no filter, chips render", async () => {
+  const { filterLegs, renderSgp, DEFAULT_SGP_FILTER } = await import("../lib/sgp.mjs");
+  const legs = [{ id: "a", ev: 0.02 }, { id: "b", ev: -0.03 }, { id: "c", ev: -0.08 }, { id: "d", ev: null }];
+  assert.deepEqual(filterLegs(legs, -0.03).map((l) => l.id), ["a", "b"], "-3% is inclusive; no-fair legs hidden");
+  assert.deepEqual(filterLegs(legs, 0, ["c"]).map((l) => l.id), ["a", "c"], "a picked leg stays visible");
+  assert.equal(filterLegs(legs, null).length, 4);
+  assert.equal(DEFAULT_SGP_FILTER, -3);
+  const ev = { id: "e", away_team: "A", home_team: "B", commence_time: new Date(NOW + 3600e3).toISOString() };
+  const books = [{ key: "fanduel", name: "FD", legs: [{ id: "x", mk: "h2h", label: "A ML", price: 100, p: 0.5, n: 3, ev: 0, team: "A", player: "", ou: "" }] }];
+  const html = renderSgp({ event: ev, sport: "basketball_nba", books, token: "t", now: NOW });
+  assert.match(html, /"minEv":-0\.03/);
+  assert.match(html, /data-f="all">All<\/button>/);
+  assert.match(html, /data-f="-3">≥ −3%<\/button>/);
+  assert.match(html, /data-f="2">≥ \+2%<\/button>/);
+  assert.match(renderSgp({ event: ev, sport: "basketball_nba", books, token: "t", minEv: null, now: NOW }), /"minEv":null/);
+  assert.match(renderSgp({ q: "x", found: [{ sport: "basketball_nba", event: { ...ev, id: "g" } }], token: "t", minEv: 0 }), /&boost=30&f=0"/);
 });
