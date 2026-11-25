@@ -183,6 +183,9 @@ fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model)
   assists/threes; NFL passing/rushing/receiving yards and receptions). About 7 credits per game. Odds are pulled when
   a game is opened and reused for 2 minutes; the page shows "odds pulled N min ago" (orange after 5 min) and a
   "Refresh odds" button that always pulls fresh and keeps the book, boost and picked legs.
+- "Alt lines" switch (off by default; about 16 credits per game instead of 7): adds alt spreads, alt totals and alt
+  player props. Alt numbers are listed under their main market (tagged "alt") and priced against every other book that
+  has that number, main or alt. Alt props that books post only on the Over side have no fair price and can't be used.
 - Each leg shows that book's price and its EV against the consensus no-vig price of the other books at that exact
   number (Pinnacle counted twice; books you don't bet still count toward the fair price).
 - Leg filter (since 11/25): show legs with EV at least All / −5% / −3% (default) / 0% / +2%. With a filter on, props

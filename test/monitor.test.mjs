@@ -2155,3 +2155,37 @@ test("SGP: shows how old the odds are and a Refresh odds button; no age line wit
   assert.match(html, /searchParams\.set\("fresh","1"\)/);
   assert.doesNotMatch(renderSgp({ event: ev, sport: "basketball_nba", books, token: "t", now: NOW }), /id="refresh"/);
 });
+
+test("SGP alt lines: markets added on request, alt numbers priced against main + alt at other books, main price wins", async () => {
+  const { sgpMarkets, mergeAlt, buildLegs, renderSgp, altKey } = await import("../lib/sgp.mjs");
+  assert.equal(sgpMarkets("basketball_nba", { alt: true }), "h2h,spreads,totals,player_points,player_rebounds,player_assists,player_threes,alternate_spreads,alternate_totals,player_points_alternate,player_rebounds_alternate,player_assists_alternate,player_threes_alternate");
+  assert.equal(altKey("h2h"), null);
+  const merged = mergeAlt([{ key: "x", markets: [
+    { key: "alternate_spreads", outcomes: [{ name: "A", price: -150, point: -1.5 }, { name: "A", price: 999, point: -3.5 }] },
+    { key: "spreads", outcomes: [{ name: "A", price: -110, point: -3.5 }, { name: "B", price: -110, point: 3.5 }] },
+  ] }]);
+  const sp = merged[0].markets.find((m) => m.key === "spreads").outcomes;
+  assert.equal(sp.find((o) => o.point === -3.5 && o.name === "A").price, -110, "main price kept for a number in both");
+  assert.equal(sp.find((o) => o.point === -1.5).alt, true);
+  assert.ok(!merged[0].markets.some((m) => m.key === "alternate_spreads"));
+
+  // FD's alt Cade O 29.5 is priced from DK's alt and Pinnacle's MAIN 29.5
+  const pts = (key, point, o, u) => ({ key, outcomes: [{ name: "Over", description: "Cade Cunningham", price: o, point }, { name: "Under", description: "Cade Cunningham", price: u, point }] });
+  const ev = { id: "e", away_team: "A", home_team: "B", commence_time: new Date(NOW + 3600e3).toISOString(), bookmakers: [
+    { key: "pinnacle", markets: [pts("player_points", 29.5, 150, -180)] },
+    { key: "draftkings", markets: [pts("player_points", 26.5, -110, -110), pts("player_points_alternate", 29.5, 150, -180)] },
+    { key: "fanduel", markets: [pts("player_points", 26.5, -110, -110), { key: "player_points_alternate", outcomes: [{ name: "Over", description: "Cade Cunningham", price: 175, point: 29.5 }] }] },
+  ] };
+  const fd = buildLegs(ev, "basketball_nba").find((b) => b.key === "fanduel");
+  const alt = fd.legs.find((l) => l.point === undefined && l.label === "Cade Cunningham O 29.5 pts") || fd.legs.find((l) => l.label === "Cade Cunningham O 29.5 pts");
+  assert.ok(alt, "alt leg listed under the main market");
+  assert.equal(alt.alt, true);
+  assert.equal(alt.mk, "player_points", "same market as the main line, so it never pairs with the main line in suggestions");
+  assert.equal(alt.n, 2, "Pinnacle main + DK alt");
+  assert.ok(alt.ev > 0, "+175 vs a ~+164 fair price");
+
+  const html = renderSgp({ event: ev, sport: "basketball_nba", books: [fd], token: "t", pulledAt: NOW, alt: true, now: NOW });
+  assert.match(html, /id="altlines"[^>]*aria-pressed="true">Alt lines on/);
+  assert.match(html, /about 16 credits; keeps/);
+  assert.match(renderSgp({ event: ev, sport: "basketball_nba", books: [fd], token: "t", pulledAt: NOW, now: NOW }), /Alt lines off/);
+});

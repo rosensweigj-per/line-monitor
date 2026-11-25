@@ -8,7 +8,8 @@ import { resolveBooks } from "../../lib/scan.mjs";
 import { loadSettings, withSettings } from "../../lib/settings.mjs";
 
 // GET /sgp?token=…&q=lions            -> NFL/NBA games for that team (free events endpoint)
-// GET /sgp?token=…&s=sport&e=eventId  -> one game's legs at every book (about 7 credits; cached 5 min)
+// GET /sgp?token=…&s=sport&e=eventId  -> one game's legs at every book (about 7 credits; cached 2 min)
+//   &alt=1 also pulls alt spreads, totals and props (about 16 credits)
 // &fresh=1 skips the 2-min cache (Refresh odds button). Optional &boost=30&b=fanduel&f=-3 (leg filter: EV at least -3%; f=all shows every leg); &o=group sorts by market instead of best EV. Information only; nothing is bet.
 const CACHE_MS = 2 * 60e3; // a re-open within 2 min reuses the pull; "Refresh odds" (&fresh=1) always pulls
 
@@ -26,7 +27,8 @@ export default async (req: Request) => {
   const query = (q.get("q") || "").trim().slice(0, 60);
   const sport = q.get("s") || "";
   const eventId = q.get("e") || "";
-  const html = (o: object) => new Response(renderSgp({ q: query, token, css: CSS, boost, minEv, sort: q.get("o") === "group" ? "group" : "ev", bookKey: q.get("b") || "", ...o }), {
+  const alt = q.get("alt") === "1";
+  const html = (o: object) => new Response(renderSgp({ q: query, token, css: CSS, boost, minEv, alt, sort: q.get("o") === "group" ? "group" : "ev", bookKey: q.get("b") || "", ...o }), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
   try {
@@ -34,11 +36,12 @@ export default async (req: Request) => {
       const cache = ((await store.get("sgpCache", { type: "json" })) || {}) as Record<string, { at: number; json: any }>;
       const now = Date.now();
       const fresh = q.get("fresh") === "1";
-      let ev = !fresh && cache[eventId] && now - cache[eventId].at < CACHE_MS ? cache[eventId].json : null;
-      let pulledAt = ev ? cache[eventId].at : now;
+      const ck = alt ? `${eventId}|alt` : eventId;
+      let ev = !fresh && cache[ck] && now - cache[ck].at < CACHE_MS ? cache[ck].json : null;
+      let pulledAt = ev ? cache[ck].at : now;
       if (!ev) {
-        ev = (await fetchEvent({ key, sport, eventId, markets: sgpMarkets(sport) })).json;
-        cache[eventId] = { at: now, json: ev };
+        ev = (await fetchEvent({ key, sport, eventId, markets: sgpMarkets(sport, { alt }) })).json;
+        cache[ck] = { at: now, json: ev };
         for (const [k, v] of Object.entries(cache)) if (now - v.at > CACHE_MS) delete cache[k];
         await store.setJSON("sgpCache", cache);
       }
