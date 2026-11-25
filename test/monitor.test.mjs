@@ -2137,3 +2137,15 @@ test("SGP suggestions: best non-clashing 2- and 3-leg combos; thin fair prices l
   assert.match(html, /id="thin"[^>]*>Need 3\+ books/);
   assert.match(html, /"thin":3/);
 });
+
+test("SGP: shows how old the odds are and a Refresh odds button; no age line without a pull time", async () => {
+  const { renderSgp } = await import("../lib/sgp.mjs");
+  const ev = { id: "e", away_team: "A", home_team: "B", commence_time: new Date(NOW + 3600e3).toISOString() };
+  const books = [{ key: "fanduel", name: "FD", legs: [{ id: "x", mk: "h2h", label: "A ML", price: 100, p: 0.5, n: 3, ev: 0, team: "A", player: "", ou: "" }] }];
+  const html = renderSgp({ event: ev, sport: "basketball_nba", books, token: "t", pulledAt: NOW - 6 * 60e3, now: NOW });
+  assert.match(html, new RegExp(`id="age" data-at="${NOW - 6 * 60e3}"`));
+  assert.match(html, /id="refresh"[^>]*>Refresh odds<\/a>/);
+  assert.match(html, /refresh before betting/);
+  assert.match(html, /searchParams\.set\("fresh","1"\)/);
+  assert.doesNotMatch(renderSgp({ event: ev, sport: "basketball_nba", books, token: "t", now: NOW }), /id="refresh"/);
+});

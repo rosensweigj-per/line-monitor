@@ -9,8 +9,8 @@ import { loadSettings, withSettings } from "../../lib/settings.mjs";
 
 // GET /sgp?token=…&q=lions            -> NFL/NBA games for that team (free events endpoint)
 // GET /sgp?token=…&s=sport&e=eventId  -> one game's legs at every book (about 7 credits; cached 5 min)
-// Optional &boost=30&b=fanduel&f=-3 (leg filter: EV at least -3%; f=all shows every leg); &o=group sorts by market instead of best EV. Information only; nothing is bet.
-const CACHE_MS = 5 * 60e3;
+// &fresh=1 skips the 2-min cache (Refresh odds button). Optional &boost=30&b=fanduel&f=-3 (leg filter: EV at least -3%; f=all shows every leg); &o=group sorts by market instead of best EV. Information only; nothing is bet.
+const CACHE_MS = 2 * 60e3; // a re-open within 2 min reuses the pull; "Refresh odds" (&fresh=1) always pulls
 
 export default async (req: Request) => {
   const url = new URL(req.url);
@@ -33,7 +33,9 @@ export default async (req: Request) => {
     if (sport && eventId && SGP_SPORTS.includes(sport)) {
       const cache = ((await store.get("sgpCache", { type: "json" })) || {}) as Record<string, { at: number; json: any }>;
       const now = Date.now();
-      let ev = cache[eventId] && now - cache[eventId].at < CACHE_MS ? cache[eventId].json : null;
+      const fresh = q.get("fresh") === "1";
+      let ev = !fresh && cache[eventId] && now - cache[eventId].at < CACHE_MS ? cache[eventId].json : null;
+      let pulledAt = ev ? cache[eventId].at : now;
       if (!ev) {
         ev = (await fetchEvent({ key, sport, eventId, markets: sgpMarkets(sport) })).json;
         cache[eventId] = { at: now, json: ev };
@@ -41,7 +43,7 @@ export default async (req: Request) => {
         await store.setJSON("sgpCache", cache);
       }
       const books = buildLegs(ev, sport, { skipBooks: resolveBooks(env("BOOKS_OFF") || "") });
-      return html({ event: ev, sport, books });
+      return html({ event: ev, sport, books, pulledAt });
     }
     if (!query) return html({});
     const eventsBySport: Record<string, any[]> = {};
