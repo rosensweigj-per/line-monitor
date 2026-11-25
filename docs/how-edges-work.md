@@ -185,6 +185,8 @@ fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model)
   number (Pinnacle counted twice; books you don't bet still count toward the fair price).
 - Leg filter (since 11/25): show legs with EV at least All / −5% / −3% (default) / 0% / +2%. With a filter on, props
   are one list, best EV first. Picked legs always stay visible. `&f=all` or `&f=0` in the link.
+- Sort: Best EV (default; every leg, main lines and props, in one list best first) or By market (sections, props
+  grouped by player). `&o=group` in the link.
 - The Odds API has no SGP prices, so the page gives the fair parlay price (leg chances multiplied, i.e. legs treated as
   unrelated) and the lowest pre-boost SGP price that is +EV with the chosen boost. Type the book's SGP price to see the
   boosted price and EV.

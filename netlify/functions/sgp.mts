@@ -9,7 +9,7 @@ import { loadSettings, withSettings } from "../../lib/settings.mjs";
 
 // GET /sgp?token=…&q=lions            -> NFL/NBA games for that team (free events endpoint)
 // GET /sgp?token=…&s=sport&e=eventId  -> one game's legs at every book (about 7 credits; cached 5 min)
-// Optional &boost=30&b=fanduel&f=-3 (leg filter: EV at least -3%; f=all shows every leg). Information only; nothing is bet.
+// Optional &boost=30&b=fanduel&f=-3 (leg filter: EV at least -3%; f=all shows every leg); &o=group sorts by market instead of best EV. Information only; nothing is bet.
 const CACHE_MS = 5 * 60e3;
 
 export default async (req: Request) => {
@@ -26,7 +26,7 @@ export default async (req: Request) => {
   const query = (q.get("q") || "").trim().slice(0, 60);
   const sport = q.get("s") || "";
   const eventId = q.get("e") || "";
-  const html = (o: object) => new Response(renderSgp({ q: query, token, css: CSS, boost, minEv, bookKey: q.get("b") || "", ...o }), {
+  const html = (o: object) => new Response(renderSgp({ q: query, token, css: CSS, boost, minEv, sort: q.get("o") === "group" ? "group" : "ev", bookKey: q.get("b") || "", ...o }), {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
   try {

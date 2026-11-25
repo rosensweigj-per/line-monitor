@@ -2101,5 +2101,9 @@ test("SGP leg filter: EV at least X, picked legs always kept, all = no filter, c
   assert.match(html, /data-f="-3">≥ −3%<\/button>/);
   assert.match(html, /data-f="2">≥ \+2%<\/button>/);
   assert.match(renderSgp({ event: ev, sport: "basketball_nba", books, token: "t", minEv: null, now: NOW }), /"minEv":null/);
+  assert.match(html, /"sort":"ev"/, "best EV is the default sort");
+  assert.match(html, /data-o="ev">Best EV<\/button><button type="button" class="chip" data-o="group">By market/);
+  assert.match(renderSgp({ event: ev, sport: "basketball_nba", books, token: "t", sort: "group", now: NOW }), /"sort":"group"/);
+  assert.match(renderSgp({ q: "x", found: [{ sport: "basketball_nba", event: { ...ev, id: "g" } }], token: "t", sort: "group" }), /&f=-3&o=group"/);
   assert.match(renderSgp({ q: "x", found: [{ sport: "basketball_nba", event: { ...ev, id: "g" } }], token: "t", minEv: 0 }), /&boost=30&f=0"/);
 });
