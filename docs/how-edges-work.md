@@ -186,6 +186,9 @@ fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model)
 - "Alt lines" switch (off by default; about 16 credits per game instead of 7): adds alt spreads, alt totals and alt
   player props. Alt numbers are listed under their main market (tagged "alt") and priced against every other book that
   has that number, main or alt. Alt props that books post only on the Over side have no fair price and can't be used.
+- Fair prices on this page use the power no-vig method for every market (since 11/25). The simple method overrates long
+  shots on lopsided pairs (e.g. an alt Under at −1200/+620), which made far alt-line tails look +EV when they weren't.
+  Alerts and the paper test keep their own rule (power for moneylines only).
 - Each leg shows that book's price and its EV against the consensus no-vig price of the other books at that exact
   number (Pinnacle counted twice; books you don't bet still count toward the fair price).
 - Leg filter (since 11/25): show legs with EV at least All / −5% / −3% (default) / 0% / +2%. With a filter on, props

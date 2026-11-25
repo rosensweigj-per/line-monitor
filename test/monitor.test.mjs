@@ -2227,3 +2227,18 @@ test("SGP promo rules: exact leg count and minimum odds by the regular-parlay pr
   assert.match(html, /id="pm"[^]*data-m="100">\+100<\/button>[^]*id="pmx"/);
   assert.match(html, /id="aim"[^]*data-a="safe">Safest<\/button>/);
 });
+
+test("SGP fair prices use the power method: lopsided alt-line tails aren't overrated, even lines unchanged", async () => {
+  const { buildLegs } = await import("../lib/sgp.mjs");
+  const tot = (key, pt, o, u) => ({ key, outcomes: [...(o == null ? [] : [{ name: "Over", price: o, point: pt }]), { name: "Under", price: u, point: pt }] });
+  const ev = { id: "e", away_team: "A", home_team: "B", commence_time: new Date(NOW + 3600e3).toISOString(), bookmakers: [
+    { key: "draftkings", markets: [tot("totals", 218.5, -110, -110), tot("alternate_totals", 197.5, -1200, 620)] },
+    { key: "williamhill_us", markets: [tot("totals", 218.5, -110, -110), tot("alternate_totals", 197.5, -1000, 550)] },
+    { key: "hardrockbet", markets: [tot("totals", 218.5, -110, -110), tot("alternate_totals", 197.5, -1100, 650)] },
+    { key: "fanduel", markets: [tot("totals", 218.5, -115, -105), tot("alternate_totals", 197.5, null, 790)] },
+  ] };
+  const fd = buildLegs(ev, "basketball_nba").find((b) => b.key === "fanduel");
+  const tail = fd.legs.find((l) => l.label === "Under 197.5");
+  assert.ok(tail.ev < 0.10, `power method keeps the +790 tail modest (was about +16% with the simple method), got ${(tail.ev * 100).toFixed(1)}%`);
+  assert.equal(fd.legs.find((l) => l.label === "Under 218.5").p, 0.5, "even -110/-110 lines give 50% either way");
+});
