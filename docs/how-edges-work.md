@@ -198,6 +198,13 @@ fair (American, no-vig), pinPrice, ev, fairSource (Pin alt / Pin ladder / model)
   legs that clash (two moneyline/spread legs, two legs from the same line, a game total with a player prop the other way).
   Ranked by the legs' combined EV at the book's own prices; each shows the fair price and the break-even SGP price with
   the boost. "Use" loads it into the slip.
+- Promo rules (since 11/25): "Promo legs" (Any / 2 / 3 / 4) and "Min odds" (None / +100 / +200 / +300 / custom). With
+  either set, suggestions are combos with exactly that many legs whose regular-parlay price at the book reaches the
+  minimum, from the 30 best legs, ranked by estimated EV with the boost: fair chance × (1 + (parlay decimal − 1) ×
+  (1 + boost)) − 1. The estimate assumes the SGP prices like the regular parlay; real SGP prices are often shorter, so
+  the bet is only on if the app's SGP price reaches the "worth it at" number and the promo minimum. With a profit boost,
+  the boost is worth more at longer odds (30% adds about 15% EV at +100, 22% at +300, 27% at +900) while every extra
+  leg adds vig, so the best picks are usually the fewest legs the promo allows, built from legs near fair.
 - The Odds API has no SGP prices, so the page gives the fair parlay price (leg chances multiplied, i.e. legs treated as
   unrelated) and the lowest pre-boost SGP price that is +EV with the chosen boost. Type the book's SGP price to see the
   boosted price and EV.
