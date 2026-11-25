@@ -1679,11 +1679,17 @@ test("BetMGM: in the bookmaker list once (still one cost region), matched from t
   assert.equal((await harness({ BOOKS_OFF: "betmgm" }, [g]).run()).newHits[0].book, "FD");
 });
 
-test("edges page: phone bottom bar carries Best $, Settings and Scan now", () => {
+test("phone bottom bars: Edges (Best $, SGP, Settings, Refresh, Scan now), Best $ and SGP link to each other", async () => {
+  const { renderBest } = await import("../lib/best.mjs");
+  const { renderSgp } = await import("../lib/sgp.mjs");
+  const barOf = (h) => h.slice(h.indexOf('<nav class="bottombar"'), h.indexOf("</nav>", h.indexOf('<nav class="bottombar"')));
+  assert.match(barOf(renderBest({ token: "t" })), /href="\/edges\?token=t">Edges<\/a><a class="btn2" href="\/sgp\?token=t">SGP/);
+  assert.match(barOf(renderSgp({ token: "t" })), /href="\/edges\?token=t">Edges<\/a><a class="btn2" href="\/best\?token=t">Best \$/);
   const html = renderEdges({ edges: {}, now: NOW, token: "t" });
-  const bar = html.slice(html.indexOf('<nav class="bottombar"'), html.indexOf("</nav>"));
+  const bar = barOf(html);
   assert.match(bar, /href="\/best\?token=t">Best \$/);
-  assert.match(bar, /href="\/settings\?token=t">Settings/);
+  assert.match(bar, /href="\/sgp\?token=t">SGP/);
+  assert.match(bar, /href="\/settings\?token=t" aria-label="Settings">/);
   assert.match(bar, /<form method="post" action="\/edges\?token=t"[^>]*>\s*<button type="submit">Scan now<\/button>/);
   assert.match(html, /@media \(max-width:700px\)\{\s*header \.actions\{display:none !important\}/);
 });
