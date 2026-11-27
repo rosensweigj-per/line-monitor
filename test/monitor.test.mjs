@@ -137,7 +137,8 @@ function harness(envs, games, propEvent = null) {
     pushes.push({ url, body: Object.fromEntries(new URLSearchParams(opts.body)) });
     return new Response("{}");
   };
-  const env = (k) => ({ ODDS_API_KEY: "x", PUSHOVER_TOKEN: "t", PUSHOVER_USER: "u", SPORTS: "basketball_nba", PROP_SPORTS: "off", CONFIRM_ML: "0", ...envs })[k];
+  // CONS_REQUIRED off here: these fixtures have one book besides Pinnacle, so the consensus can't be checked
+  const env = (k) => ({ ODDS_API_KEY: "x", PUSHOVER_TOKEN: "t", PUSHOVER_USER: "u", SPORTS: "basketball_nba", PROP_SPORTS: "off", CONFIRM_ML: "0", CONS_REQUIRED: "0", ...envs })[k];
   return { mem, pushes, calls, run: (now = NOW, force = false) => runMonitor({ store, env, now, force, log() {} }) };
 }
 const edgeGame = () => game({ pin: [h2h(-110, -110)], books: { fanduel: [h2h(110, -130)] } });
@@ -382,6 +383,7 @@ test("settings form round-trips and overrides env vars in a run", async () => {
     ALERT_TTL_MIN: "10",
     ALERT_MAX_INDIVIDUAL: "5",
     CONFIRM_ML: "0",
+    CONS_REQUIRED: "0",
     TIP_INTERVAL_MIN: "5",
     NEAR_INTERVAL_MIN: "15",
     FAR_INTERVAL_MIN: "60",
@@ -2241,4 +2243,27 @@ test("SGP fair prices use the power method: lopsided alt-line tails aren't overr
   const tail = fd.legs.find((l) => l.label === "Under 197.5");
   assert.ok(tail.ev < 0.10, `power method keeps the +790 tail modest (was about +16% with the simple method), got ${(tail.ev * 100).toFixed(1)}%`);
   assert.equal(fd.legs.find((l) => l.label === "Under 218.5").p, 0.5, "even -110/-110 lines give 50% either way");
+});
+
+test("alerts only when consensus agrees (default on); held edges stay on the page and alert once the consensus comes round", async () => {
+  // Pinnacle and two other books at -110/-110 (fair 50%); FanDuel +110 on the Celtics
+  const mk = (price, other) => [h2h(price, other)];
+  const g = (dk, mgm) => game({ pin: mk(-110, -110), books: { fanduel: mk(110, -130), draftkings: mk(...dk), betmgm: mk(...mgm) } });
+  // consensus only weak: DK and BetMGM at Celtics +100 / Knicks -125 (no edge of their own) pull the fair price below 50%
+  let h = harness({ CONS_REQUIRED: undefined }, [g([100, -125], [100, -125])]);
+  let s = await h.run();
+  assert.equal(h.pushes.length, 0, "held: the other books don't agree");
+  assert.equal(s.heldNoConsensus, 1);
+  assert.equal(h.mem.edges.basketball_nba.hits.length, 1, "still on the edges page");
+  assert.equal(Object.keys(h.mem.state.alerted).length, 0, "not marked as alerted");
+  // later the consensus agrees (books back to -110): it alerts then
+  const games = [g([-110, -110], [-110, -110])];
+  h = harness({ CONS_REQUIRED: undefined }, games);
+  s = await h.run();
+  assert.equal(h.pushes.length, 1);
+  assert.match(h.pushes[0].body.message, /✓ Consensus agrees/);
+  // the switch can turn it off
+  h = harness({ CONS_REQUIRED: "0" }, [g([100, -125], [100, -125])]);
+  await h.run();
+  assert.equal(h.pushes.length, 1);
 });

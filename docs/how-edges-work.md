@@ -134,6 +134,13 @@ It reads the Bet Tracker sheet's Pending tab (published CSV) only to tag alerts;
   price). Team totals are pulled too (`team_totals` + `alternate_team_totals`); if Pinnacle doesn't post one the row
   says `missing`. Capture only: leans never alert.
 
+## 9b. Only alert when consensus agrees (since 11/27)
+- Default on (`CONS_REQUIRED`, Settings → "Only alert when consensus agrees"). An edge is pushed only if the no-vig
+  consensus of the other books at the same number also shows +3% or better (the "✓ Consensus agrees" line).
+- Edges where the consensus is weak (0–3%), disagrees, or has too few books are not pushed. They still show on the edges
+  page with their consensus line, and they aren't marked as alerted, so one alerts later if the consensus comes round.
+- The paper test is unaffected (it logs every edge either way). `/status` shows `heldNoConsensus` per run.
+
 ## 10. Paper test: Pinnacle method vs consensus method (started 11/18)
 - Why: through 11/17, alert bets were 35-62 (−$224) despite +4.9% average CLV vs Pinnacle. Props looked best on
   CLV but lost money, which suggests Pinnacle's prop prices (low limits) are too soft to anchor on.
